@@ -33,7 +33,9 @@ Try it right away against the fixtures checked into this repo (after
 Episode reference: `<run>/ep000123` (or `<run>/123`). `show` also accepts
 a bare `<run>/<id>` and prints an ASCII top-down map plus episode stats;
 `--png <path>` additionally writes a matplotlib preview (needs
-`uv sync --extra figures`).
+`uv sync --extra figures`). The ASCII map shows visit *counts* per cell
+(digits, `*` for ≥10) rather than the spec's path-in-visit-order — a
+deliberate deviation.
 
 Commands: `runs` (lists runs under `--logs` that contain traces), `list RUN`
 (episodes of a run as a table, filterable and sortable), `pick RUN` (resolve

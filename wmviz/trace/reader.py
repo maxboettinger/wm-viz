@@ -93,14 +93,25 @@ class Index:
         if not path.exists():
             raise FileNotFoundError(f"no trace/index.csv under {run_dir} — was the run recorded with --trace auto?")
         with open(path, newline="") as fh:
-            rows = [IndexRow.from_csv(d) for d in csv.DictReader(fh)]
+            reader = csv.DictReader(fh)
+            rows = []
+            for d in reader:
+                try:
+                    rows.append(IndexRow.from_csv(d))
+                except (KeyError, ValueError) as e:
+                    raise ValueError(f"{path}:{reader.line_num}: {e}") from e
         return cls(run_dir, rows)
 
     def by_id(self, episode_id: int) -> IndexRow:
         for r in self.rows:
             if r.episode_id == episode_id:
                 return r
-        raise KeyError(f"{self.run_name} has no episode {episode_id} (ids 0..{len(self.rows) - 1})")
+        if self.rows:
+            ids = [r.episode_id for r in self.rows]
+            id_range = f"ids {min(ids)}..{max(ids)}"
+        else:
+            id_range = "ids none"
+        raise KeyError(f"{self.run_name} has no episode {episode_id} ({len(self.rows)} episodes, {id_range})")
 
     def path_of(self, row: IndexRow) -> Path:
         return self.run_dir / "trace" / row.file

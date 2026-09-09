@@ -17,7 +17,9 @@ SELECTORS = ("best-return", "most-cells", "first-success", "first-door", "first-
 
 
 class NoMatch(Exception):
-    """No episode satisfies the selector; message names the nearest candidates."""
+    """No episode satisfies the selector, or the filters left no rows to choose from.
+    This exception's own message does not name candidates; the CLI (pick_cmd) appends
+    nearest-candidate hints to str(e) before printing it."""
 
 
 @dataclass
@@ -32,6 +34,13 @@ class Filters:
 
 
 def apply_filters(rows: list[IndexRow], f: Filters) -> list[IndexRow]:
+    seed_filter: int | None = None
+    if f.layout is not None and f.layout.startswith("seed:"):
+        raw = f.layout[5:]
+        try:
+            seed_filter = int(raw)
+        except ValueError:
+            raise ValueError(f"--layout seed:<n> needs an integer, got {raw!r}") from None
     out = []
     for r in rows:
         if f.phase is not None and r.phase != f.phase:
@@ -48,7 +57,7 @@ def apply_filters(rows: list[IndexRow], f: Filters) -> list[IndexRow]:
             continue
         if f.layout is not None:
             if f.layout.startswith("seed:"):
-                if r.seed != int(f.layout[5:]):
+                if r.seed != seed_filter:
                     continue
             elif not r.layout_hash.startswith(f.layout):
                 continue

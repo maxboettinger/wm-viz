@@ -1,4 +1,7 @@
+import csv
 import json
+import re
+
 import numpy as np
 import pytest
 
@@ -22,6 +25,28 @@ def test_index_missing_trace_dir_has_clear_error(tmp_path):
     (tmp_path / "norun").mkdir()
     with pytest.raises(FileNotFoundError, match="trace/index.csv"):
         Index.load(tmp_path / "norun")
+
+
+def test_index_by_id_error_reports_id_range(run_dir):
+    idx = Index.load(run_dir)
+    with pytest.raises(KeyError, match=re.escape("no episode 42 (6 episodes, ids 0..5)")):
+        idx.by_id(42)
+
+
+def test_index_load_bad_row_reports_path_and_line_number(run_dir, tmp_path):
+    src = run_dir / "trace" / "index.csv"
+    dst_dir = tmp_path / "badrun" / "trace"
+    dst_dir.mkdir(parents=True)
+    dst = dst_dir / "index.csv"
+    lines = src.read_text().splitlines(keepends=True)
+    fieldnames = lines[0].strip().split(",")
+    with open(dst, "w", newline="") as fh:
+        fh.writelines(lines)
+        bad = {c: "" for c in fieldnames}
+        bad["episode_id"] = "not-an-int"
+        csv.DictWriter(fh, fieldnames=fieldnames).writerow(bad)
+    with pytest.raises(ValueError, match=re.escape(str(dst)) + r":\d+:"):
+        Index.load(dst.parent.parent)
 
 
 def test_episode_load_and_layout(run_dir):

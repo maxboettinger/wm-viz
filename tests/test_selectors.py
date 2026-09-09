@@ -36,7 +36,7 @@ def test_pick_selectors(rows):
     assert pick(rows, "first-key").episode_id == 1
     assert pick(rows, "latest").episode_id == 5
     assert pick(rows, "at-step", at_step=210).episode_id == 4
-    assert pick(rows, "at-step", at_step=110).episode_id in (2, 3)
+    assert pick(rows, "at-step", at_step=110).episode_id == 2  # tie with 3 broken by lower episode_id
 
 
 def test_pick_no_match_messages(rows):
