@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 renders/
 *.blend1
+.superpowers/
