@@ -1,0 +1,51 @@
+from typer.testing import CliRunner
+
+from wmviz.cli import app
+
+runner = CliRunner()
+
+
+def _inv(logs_dir, *args):
+    return runner.invoke(app, ["--logs", str(logs_dir), *args])
+
+
+def test_runs(logs_dir):
+    r = _inv(logs_dir, "runs")
+    assert r.exit_code == 0 and "p2e-doorkey6x6-s0" in r.stdout and "6" in r.stdout
+
+
+def test_list_filters_and_sort(logs_dir):
+    r = _inv(logs_dir, "list", "p2e-doorkey6x6-s0", "--phase", "eval", "--sort", "return")
+    assert r.exit_code == 0
+    assert "ep000003" in r.stdout and "ep000000" not in r.stdout
+    assert r.stdout.index("ep000003") < r.stdout.index("ep000002")
+
+
+def test_list_unknown_run(logs_dir):
+    r = _inv(logs_dir, "list", "nope")
+    assert r.exit_code == 1 and "trace/index.csv" in r.stdout
+
+
+def test_pick_prints_ref_only(logs_dir):
+    r = _inv(logs_dir, "pick", "p2e-doorkey6x6-s0", "--best-return")
+    assert r.exit_code == 0 and r.stdout.strip() == "p2e-doorkey6x6-s0/ep000003"
+    r = _inv(logs_dir, "pick", "p2e-doorkey6x6-s0", "--phase", "eval", "--at-step", "290")
+    assert r.stdout.strip() == "p2e-doorkey6x6-s0/ep000005"
+    r = _inv(logs_dir, "pick", "p2e-doorkey6x6-s0", "--phase", "coverage_eval", "--first-success")
+    assert r.exit_code == 1 and "no successful episode" in r.stdout
+
+
+def test_pick_requires_exactly_one_selector(logs_dir):
+    r = _inv(logs_dir, "pick", "p2e-doorkey6x6-s0")
+    assert r.exit_code == 2 and "exactly one selector" in r.stdout
+    r = _inv(logs_dir, "pick", "p2e-doorkey6x6-s0", "--latest", "--best-return")
+    assert r.exit_code == 2
+
+
+def test_show_ascii_and_png(logs_dir, tmp_path):
+    r = _inv(logs_dir, "show", "p2e-doorkey6x6-s0/ep000003", "--png", str(tmp_path / "e.png"))
+    assert r.exit_code == 0
+    assert "#######" in r.stdout and "return" in r.stdout and "eval" in r.stdout
+    assert (tmp_path / "e.png").exists()
+    r = _inv(logs_dir, "show", "p2e-doorkey6x6-s0/42")
+    assert r.exit_code == 1 and "no episode 42" in r.stdout
