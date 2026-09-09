@@ -1,0 +1,11 @@
+episode_id,phase,actor,env_slot,seed,start_step,end_step,length,return,success,unique_cells,coverage_pct,first_key_step,first_door_step,first_goal_step,rooms_visited,layout_hash,file
+0,eval,task,0,1000,400,400,360,0,0,1,0.0769231,,,,,83b766f79f66,episodes/ep_000000.npz
+1,eval,task,0,1001,400,400,360,0,0,1,0.0769231,,,,,c409e766d1fb,episodes/ep_000001.npz
+2,coverage_eval,explorer,0,2000,400,400,360,0,0,5,0.384615,50,56,,,abf44c25c641,episodes/ep_000002.npz
+3,coverage_eval,explorer,0,2001,400,400,360,0,0,4,0.307692,18,,,,abf44c25c641,episodes/ep_000003.npz
+4,train_explorer,explorer,0,,0,654,327,0.1825,1,11,0.846154,102,119,327,,9fe74bfc54b6,episodes/ep_000004.npz
+5,train_explorer,explorer,1,,0,720,360,0,0,4,0.307692,28,,,,1c9027f07da4,episodes/ep_000005.npz
+6,eval,task,0,1000,800,800,360,0,0,1,0.0769231,,,,,83b766f79f66,episodes/ep_000006.npz
+7,eval,task,0,1001,800,800,360,0,0,2,0.153846,,,,,c409e766d1fb,episodes/ep_000007.npz
+8,coverage_eval,explorer,0,2000,800,800,360,0,0,4,0.307692,23,,,,abf44c25c641,episodes/ep_000008.npz
+9,coverage_eval,explorer,0,2001,800,800,360,0,0,8,0.615385,1,94,,,abf44c25c641,episodes/ep_000009.npz

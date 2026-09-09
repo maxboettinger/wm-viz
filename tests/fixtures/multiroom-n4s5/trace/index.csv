@@ -1,0 +1,13 @@
+episode_id,phase,actor,env_slot,seed,start_step,end_step,length,return,success,unique_cells,coverage_pct,first_key_step,first_door_step,first_goal_step,rooms_visited,layout_hash,file
+0,train_explorer,explorer,0,,0,240,120,0,0,4,0.0952381,,15,,1,ddd3f09037c6,episodes/ep_000000.npz
+1,train_explorer,explorer,1,,0,240,120,0,0,6,0.133333,,42,,2,c795a198c4e2,episodes/ep_000001.npz
+2,eval,task,0,1000,400,400,120,0,0,1,0.0204082,,,,1,54b1e474f422,episodes/ep_000002.npz
+3,eval,task,0,1001,400,400,120,0,0,1,0.0263158,,,,1,30b4c6b7bf43,episodes/ep_000003.npz
+4,coverage_eval,explorer,0,2000,400,400,120,0,0,3,0.0909091,,77,,1,3daa99d3bd79,episodes/ep_000004.npz
+5,coverage_eval,explorer,0,2001,400,400,120,0,0,4,0.111111,,,,1,f7148653e307,episodes/ep_000005.npz
+6,train_explorer,explorer,0,,240,480,120,0,0,2,0.05,,,,1,7de6d677b1aa,episodes/ep_000006.npz
+7,train_explorer,explorer,1,,240,480,120,0,0,7,0.155556,,,,1,1ffe20f66ae3,episodes/ep_000007.npz
+10,eval,task,0,1000,800,800,120,0,0,1,0.0204082,,,,1,54b1e474f422,episodes/ep_000010.npz
+11,eval,task,0,1001,800,800,120,0,0,1,0.0263158,,,,1,30b4c6b7bf43,episodes/ep_000011.npz
+12,coverage_eval,explorer,0,2000,800,800,120,0,0,7,0.212121,,1,,1,3daa99d3bd79,episodes/ep_000012.npz
+13,coverage_eval,explorer,0,2001,800,800,120,0,0,4,0.111111,,,,1,f7148653e307,episodes/ep_000013.npz
