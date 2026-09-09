@@ -105,3 +105,12 @@ def run_dir(tmp_path):
 @pytest.fixture
 def logs_dir(run_dir):
     return run_dir.parent
+
+
+@pytest.fixture(autouse=True)
+def _wide_terminal(monkeypatch):
+    """Rich falls back to an 80-col width when stdout isn't a tty (e.g. under
+    CliRunner), which truncates our wide tables. Rich reads COLUMNS lazily on
+    every render, so pin it wide for tests instead of hardcoding a Console
+    width in the CLI (which would break real terminals)."""
+    monkeypatch.setenv("COLUMNS", "200")

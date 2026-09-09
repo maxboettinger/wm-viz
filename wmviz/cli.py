@@ -15,12 +15,7 @@ from .trace import Episode, Index, IndexRow, find_runs, parse_ref
 from .trace.selectors import SORT_KEYS, Filters, NoMatch, apply_filters, pick as pick_row, sort_rows
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, help=__doc__)
-# Rich defaults to an 80-column width when stdout isn't a tty (e.g. under
-# CliRunner, or piped output) which truncates our wide tables with ellipses.
-# Force a generous fixed width so `list`/`runs` render in full everywhere;
-# real terminals still get full-width rendering since rich just word-wraps
-# any row content that doesn't fit the actual window.
-console = Console(highlight=False, width=200)
+console = Console(highlight=False)
 
 
 class State:

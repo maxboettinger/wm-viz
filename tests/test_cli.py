@@ -49,3 +49,60 @@ def test_show_ascii_and_png(logs_dir, tmp_path):
     assert (tmp_path / "e.png").exists()
     r = _inv(logs_dir, "show", "p2e-doorkey6x6-s0/42")
     assert r.exit_code == 1 and "no episode 42" in r.stdout
+
+
+def test_list_actor_filter(logs_dir):
+    r = _inv(logs_dir, "list", "p2e-doorkey6x6-s0", "--actor", "explorer")
+    assert r.exit_code == 0
+    assert "ep000000" in r.stdout and "ep000004" in r.stdout
+    for absent in ("ep000001", "ep000002", "ep000003", "ep000005"):
+        assert absent not in r.stdout
+
+
+def test_list_step_range_filters(logs_dir):
+    r = _inv(logs_dir, "list", "p2e-doorkey6x6-s0", "--after-step", "150")
+    assert r.exit_code == 0
+    assert "ep000004" in r.stdout and "ep000005" in r.stdout
+    for absent in ("ep000000", "ep000001", "ep000002", "ep000003"):
+        assert absent not in r.stdout
+
+    r = _inv(logs_dir, "list", "p2e-doorkey6x6-s0", "--before-step", "50")
+    assert r.exit_code == 0
+    assert "ep000000" in r.stdout and "ep000001" in r.stdout
+    for absent in ("ep000002", "ep000003", "ep000004", "ep000005"):
+        assert absent not in r.stdout
+
+
+def test_list_success_filter(logs_dir):
+    r = _inv(logs_dir, "list", "p2e-doorkey6x6-s0", "--success")
+    assert r.exit_code == 0
+    assert "ep000003" in r.stdout
+    for absent in ("ep000000", "ep000001", "ep000002", "ep000004", "ep000005"):
+        assert absent not in r.stdout
+
+    r = _inv(logs_dir, "list", "p2e-doorkey6x6-s0", "--no-success")
+    assert r.exit_code == 0
+    assert "ep000003" not in r.stdout
+    for present in ("ep000000", "ep000001", "ep000002", "ep000004", "ep000005"):
+        assert present in r.stdout
+
+
+def test_list_min_cells_filter(logs_dir):
+    r = _inv(logs_dir, "list", "p2e-doorkey6x6-s0", "--min-cells", "9")
+    assert r.exit_code == 0
+    assert "ep000003" in r.stdout
+    for absent in ("ep000000", "ep000001", "ep000002", "ep000004", "ep000005"):
+        assert absent not in r.stdout
+
+
+def test_list_layout_seed_filter(logs_dir):
+    r = _inv(logs_dir, "list", "p2e-doorkey6x6-s0", "--layout", "seed:1000")
+    assert r.exit_code == 0
+    assert "ep000002" in r.stdout and "ep000005" in r.stdout
+    for absent in ("ep000000", "ep000001", "ep000003", "ep000004"):
+        assert absent not in r.stdout
+
+
+def test_pick_actor_latest(logs_dir):
+    r = _inv(logs_dir, "pick", "p2e-doorkey6x6-s0", "--actor", "explorer", "--latest")
+    assert r.exit_code == 0 and r.stdout.strip() == "p2e-doorkey6x6-s0/ep000004"
