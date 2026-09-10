@@ -4,7 +4,8 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
-from .mpl import COLOR_RGB, draw_layout, draw_trail, new_axes  # noqa: F401  (COLOR_RGB re-exported)
+from .grid import COLOR_RGB  # noqa: F401  (re-exported)
+from .mpl import _plt, draw_agent, draw_layout, draw_trail, new_axes
 from .trace.reader import Episode
 
 
@@ -44,11 +45,9 @@ def save_png(ep: Episode, out: Path | str, cell_px: int = 32) -> Path:
     fig, ax = new_axes(ep.layout, cell_px)
     draw_layout(ax, ep.layout)
     draw_trail(ax, ep.agent_pos, lw=cell_px * 0.12)
-    pts = ep.agent_pos.astype(float) + 0.5
-    ax.plot(*pts[-1], "s", color="black", mec="w", ms=cell_px * 0.3)
+    draw_agent(ax, ep.agent_pos[-1], int(ep.agent_dir[-1]))
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, bbox_inches="tight", pad_inches=0.05)
-    import matplotlib.pyplot as plt
-    plt.close(fig)
+    _plt().close(fig)
     return out

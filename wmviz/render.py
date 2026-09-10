@@ -202,11 +202,16 @@ def _composited(ep, row, cfg, cams, frames: Sequence[int]):
     return _compose_from_disk(per_cam, ep, row, cfg, frames)
 
 
-def render_still(ep: Episode, row: IndexRow, cfg: RenderConfig, step: int) -> np.ndarray:
+def _still_frame(ep: Episode, row: IndexRow, cfg: RenderConfig, cams, step: int) -> np.ndarray:
+    """The composited frame of `step` (clamped to the episode) from an already built scene."""
     from .animate import step_frame
-    _, cams, _ = build(ep, cfg)
     f = step_frame(min(max(step, 0), ep.length), cfg.anim)
     return next(iter(_composited(ep, row, cfg, cams, [f])))
+
+
+def render_still(ep: Episode, row: IndexRow, cfg: RenderConfig, step: int) -> np.ndarray:
+    _, cams, _ = build(ep, cfg)
+    return _still_frame(ep, row, cfg, cams, step)
 
 
 def frames_composited(ep: Episode, row: IndexRow, cfg: RenderConfig) -> tuple[int, Iterable[np.ndarray]]:
@@ -221,7 +226,6 @@ def frames_composited(ep: Episode, row: IndexRow, cfg: RenderConfig) -> tuple[in
 
 
 def render_episode(ep: Episode, row: IndexRow, cfg: RenderConfig) -> Path:
-    from .animate import step_frame
     from .scene.base import save_blend
 
     _, cams, last = build(ep, cfg)
@@ -234,9 +238,7 @@ def render_episode(ep: Episode, row: IndexRow, cfg: RenderConfig) -> Path:
     out = Path(cfg.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     if cfg.still is not None:
-        f = step_frame(min(max(cfg.still, 0), ep.length), cfg.anim)
-        img = next(iter(_composited(ep, row, cfg, cams, [f])))
-        iio3.imwrite(out.with_suffix(".png"), img)
+        iio3.imwrite(out.with_suffix(".png"), _still_frame(ep, row, cfg, cams, cfg.still))
         return out.with_suffix(".png")
     return write_mp4(_composited(ep, row, cfg, cams, range(1, last + 1)), out.with_suffix(".mp4"), cfg.fps)
 

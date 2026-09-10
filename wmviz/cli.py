@@ -13,7 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .trace import Episode, Index, IndexRow, find_runs, parse_ref
-from .trace.selectors import SORT_KEYS, Filters, NoMatch, apply_filters, pick as pick_row, sort_rows
+from .trace.selectors import SELECTORS, SORT_KEYS, Filters, NoMatch, apply_filters, pick as pick_row, sort_rows
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, help=__doc__)
 console = Console(highlight=False, width=None if sys.stdout.isatty() else 200)
@@ -131,15 +131,11 @@ def pick_cmd(run: str, phase: Optional[str] = _PHASE, actor: Optional[str] = _AC
              at_step: Optional[int] = typer.Option(None, "--at-step"),
              latest: bool = typer.Option(False, "--latest")):
     """Resolve one episode and print its reference (for $(...) in shells)."""
-    chosen = [name for name, on in (("best-return", best_return), ("most-cells", most_cells),
-                                    ("first-success", first_success), ("first-door", first_door),
-                                    ("first-key", first_key), ("at-step", at_step is not None),
-                                    ("latest", latest)) if on]
-    if len(chosen) != 1:
-        _fail("give exactly one selector: --best-return, --most-cells, --first-success, "
-              "--first-door, --first-key, --at-step N, --latest", 2)
+    selector = _chosen_selector(best_return, most_cells, first_success, first_door, first_key, at_step, latest)
+    if selector is None:
+        _fail(f"give exactly one selector: {_SELECTOR_FLAGS}", 2)
     idx = _index(run)
-    row = _pick(idx, _filters(phase, actor, after_step, before_step, success, min_cells, layout), chosen[0], at_step)
+    row = _pick(idx, _filters(phase, actor, after_step, before_step, success, min_cells, layout), selector, at_step)
     print(row.ref(idx.run_name))
 
 
@@ -181,7 +177,7 @@ def resolve_episode(logs: Path, ref: str) -> tuple[Index, IndexRow, Episode]:
     return idx, row, Episode.load(idx.path_of(row))
 
 
-_SELECTOR_NAMES = ("best-return", "most-cells", "first-success", "first-door", "first-key", "at-step", "latest")
+_SELECTOR_FLAGS = "--best-return, --most-cells, --first-success, --first-door, --first-key, --at-step N, --latest"
 
 _BEST = typer.Option(False, "--best-return")
 _MOST = typer.Option(False, "--most-cells")
@@ -192,23 +188,31 @@ _AT = typer.Option(None, "--at-step")
 _LATEST = typer.Option(False, "--latest")
 
 
+def _chosen_selector(best_return, most_cells, first_success, first_door, first_key, at_step, latest) -> str | None:
+    """The one selector flag that is set, by its `SELECTORS` name (`at_step` counts when not None); None if
+    no selector was given. More than one exits 2 — callers decide what "none" means for them."""
+    chosen = [name for name, on in zip(SELECTORS, (best_return, most_cells, first_success, first_door, first_key,
+                                                    at_step is not None, latest)) if on]
+    if len(chosen) > 1:
+        _fail(f"give exactly one selector, not {len(chosen)} ({', '.join('--' + c for c in chosen)}): {_SELECTOR_FLAGS}", 2)
+    return chosen[0] if chosen else None
+
+
 def _target(target: str, filters: Filters, best_return, most_cells, first_success, first_door, first_key,
             at_step, latest) -> tuple[Index, IndexRow, Episode]:
     """`<run>/ep000123` → that episode; `<run>` + exactly one selector → picked episode."""
-    chosen = [n for n, on in zip(_SELECTOR_NAMES, (best_return, most_cells, first_success, first_door, first_key,
-                                                    at_step is not None, latest)) if on]
+    selector = _chosen_selector(best_return, most_cells, first_success, first_door, first_key, at_step, latest)
     if "/" in target:
-        if chosen:
+        if selector is not None:
             _fail("give either <run>/ep000123 or <run> plus one selector, not both", 2)
         try:
             return resolve_episode(state.logs, target)
         except (ValueError, FileNotFoundError, KeyError) as e:
             _fail(e.args[0] if isinstance(e, KeyError) and e.args else str(e))
-    if len(chosen) != 1:
-        _fail("TARGET is a run name: give exactly one selector (--best-return, --most-cells, --first-success, "
-              "--first-door, --first-key, --at-step N, --latest) or pass <run>/ep000123", 2)
+    if selector is None:
+        _fail(f"TARGET is a run name: give exactly one selector ({_SELECTOR_FLAGS}) or pass <run>/ep000123", 2)
     idx = _index(target)
-    row = _pick(idx, filters, chosen[0], at_step)
+    row = _pick(idx, filters, selector, at_step)
     return idx, row, Episode.load(idx.path_of(row))
 
 
@@ -226,10 +230,12 @@ def _default_out(idx: Index, row: IndexRow, suffix: str) -> Path:
     return Path("renders") / idx.run_name / f"ep{row.episode_id:06d}{suffix}"
 
 
-def _render_options(idx, row, out, engine, samples, res, fps, frames_per_step, discrete, preview, camera,
-                    trail, heatmap, hud, still, save_blend, no_render, assets, dream_layout) -> dict:
-    """Validated `RenderConfig` kwargs (bad values exit 2). Imports nothing that needs bpy, so
-    argument errors are reported before — and independently of — the Blender check."""
+def _render_options(idx, row, out, *, engine, samples, res, preview, camera, assets, fps=24, frames_per_step=6,
+                    discrete=False, trail=False, heatmap=False, hud=False, still=None, save_blend=None,
+                    no_render=False, dream_layout="pip") -> dict:
+    """Validated `RenderConfig` kwargs (bad values exit 2); the defaults are the still-render shape shared by
+    `figure`, `_figure_images` and `timeline --video`. Imports nothing that needs bpy, so argument errors
+    are reported independently of the Blender check."""
     cams = tuple(c.strip() for c in camera.split(",") if c.strip())
     if not cams:
         _fail("--camera needs at least one preset (topdown, follow, fpv, orbit, iso)", 2)
@@ -274,12 +280,14 @@ def render(target: str,
            assets: Optional[Path] = typer.Option(None, "--assets", help="asset library .blend"),
            dream_layout: str = typer.Option("pip", "--dream-layout", help="pip | split (dream episodes)")):
     """Render one episode as a Blender animation (or a still) — TARGET is <run>/ep000123 or <run> + one selector."""
+    _need_bpy()
     idx, row, ep = _target(target, _filters(phase, actor, after_step, before_step, success, min_cells, layout),
                            best_return, most_cells, first_success, first_door, first_key, at_step, latest)
     camera = camera or ("fpv" if ep.dream is not None else "topdown")
-    opts = _render_options(idx, row, out, engine, samples, res, fps, frames_per_step, discrete, preview, camera,
-                           trail, heatmap, hud, still, save_blend, no_render, assets, dream_layout)
-    _need_bpy()
+    opts = _render_options(idx, row, out, engine=engine, samples=samples, res=res, preview=preview, camera=camera,
+                           assets=assets, fps=fps, frames_per_step=frames_per_step, discrete=discrete, trail=trail,
+                           heatmap=heatmap, hud=hud, still=still, save_blend=save_blend, no_render=no_render,
+                           dream_layout=dream_layout)
     from .render import RenderConfig, render_episode
     try:
         result = render_episode(ep, row, RenderConfig(**opts))
@@ -327,27 +335,29 @@ def figure(target: str,
     """A still of one episode (top-down by default) with trail and heatmap; --keyframes makes a labelled strip."""
     if out is None:
         _fail("figure needs --out <path.png>", 2)
+    out = out.with_suffix(".png")
     be = _backend(backend)
     if be == "blender":
         _need_bpy()
     idx, row, ep = _target(target, _filters(phase, actor, after_step, before_step, success, min_cells, layout),
                            best_return, most_cells, first_success, first_door, first_key, at_step, latest)
     from .mpl import figure_image, keyframe_steps
-    try:
-        steps = keyframe_steps(row, ep, keyframes) if keyframes else [(ep.length, "")]
+    try:      # any explicit --keyframes value is a spec, even "" (which fails like --milestones ",")
+        steps = keyframe_steps(row, ep, keyframes) if keyframes is not None else [(ep.length, "")]
     except ValueError as e:
         _fail(str(e), 2)
     labels = [l for _, l in steps]
-    if keyframes:
+    if keyframes is not None:
         console.print("keyframes: " + ", ".join(labels))
     if be == "mpl":
         images = [figure_image(ep, step=s, trail=trail, heatmap=heatmap) for s, _ in steps]
     else:
         from .render import RenderConfig, render_still
-        cfg = RenderConfig(**_still_options(idx, row, out, engine, samples, res, preview, camera, trail, heatmap, assets))
+        cfg = RenderConfig(**_render_options(idx, row, out, engine=engine, samples=samples, res=res, preview=preview,
+                                             camera=camera, assets=assets, trail=trail, heatmap=heatmap))
         images = [render_still(ep, row, cfg, s) for s, _ in steps]
     from .compose import strip
-    img = images[0] if len(images) == 1 and not keyframes else strip(images, labels)
+    img = images[0] if len(images) == 1 and keyframes is None else strip(images, labels)
     _write_image(img, out)
     console.print(f"wrote {out}")
 
@@ -370,13 +380,6 @@ def _milestones(s: str) -> list[int]:
     return out
 
 
-def _still_options(idx, row, out, engine, samples, res, preview, camera, trail, heatmap, assets) -> dict:
-    """`_render_options` pinned to the still-render shape shared by `figure` and `_figure_images`
-    (fixed fps/frames_per_step/discrete/hud/still/save_blend/no_render/dream_layout)."""
-    return _render_options(idx, row, out, engine, samples, res, 24, 6, False, preview, camera,
-                           trail, heatmap, False, None, None, False, assets, "pip")
-
-
 def _figure_images(idx, rows, backend: str, camera, preview, engine, samples, res, assets, out: Path):
     """One still image per row; the blender backend gives each episode its own `<out stem>_<id>_frames/`
     (derived from the real `--out`) so distinct episodes never share a frame cache — sharing one
@@ -390,7 +393,8 @@ def _figure_images(idx, rows, backend: str, camera, preview, engine, samples, re
         else:
             from .render import RenderConfig, render_still
             ep_out = out.parent / f"{out.stem}_{row.episode_id:06d}.png"
-            opts = _still_options(idx, row, ep_out, engine, samples, res, preview, camera, True, True, assets)
+            opts = _render_options(idx, row, ep_out, engine=engine, samples=samples, res=res, preview=preview,
+                                   camera=camera, assets=assets, trail=True, heatmap=True)
             images.append(render_still(ep, row, RenderConfig(**opts), ep.length))
     return images
 
@@ -439,6 +443,7 @@ def timeline(run: str,
         _need_bpy()
     from .compose import grid, label, strip
     if not video:
+        out = out.with_suffix(".png")
         images = _figure_images(idx, picked, be, camera, preview, engine, samples, res, assets, out)
         _write_image(strip(images, labels), out)
     else:
@@ -447,8 +452,8 @@ def timeline(run: str,
         for row in picked:
             ep = Episode.load(idx.path_of(row))
             ep_out = out.parent / f"{out.stem}_{row.episode_id:06d}.mp4"
-            opts = _render_options(idx, row, ep_out, engine, samples, res, fps, 6, False, preview, camera,
-                                   True, True, False, None, None, False, assets, "pip")
+            opts = _render_options(idx, row, ep_out, engine=engine, samples=samples, res=res, preview=preview,
+                                   camera=camera, assets=assets, fps=fps, trail=True, heatmap=True)
             # each frames_composited() call renders its episode fully to disk before the next
             # build() resets the scene for the following episode — sequential by construction.
             seqs.append(frames_composited(ep, row, RenderConfig(**opts)))
@@ -535,6 +540,7 @@ def heatmap(run: str,
         held = [_hold_last(it, n) for _, it in results]
         out = write_mp4((tiled([next(h) for h in held]) for _ in range(n)), out.with_suffix(".mp4"), fps)
     else:
+        out = out.with_suffix(".png")
         _write_image(tiled(results), out)
     console.print(f"wrote {out}")
 

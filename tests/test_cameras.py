@@ -1,5 +1,4 @@
 """wmviz/cameras.py — camera presets (needs bpy)."""
-import math
 from pathlib import Path
 
 import pytest

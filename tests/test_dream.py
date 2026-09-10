@@ -1,8 +1,5 @@
 """Dream episodes: reader block, panels, compositing (no bpy)."""
-from pathlib import Path
-
 import numpy as np
-import pytest
 
 from wmviz.render import RenderConfig, compose_frame, dream_panels
 from wmviz.trace import Episode, Index

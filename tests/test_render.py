@@ -123,6 +123,21 @@ def test_render_frames_ignores_tmp_and_empty_files(tmp_path):
     assert sorted(q.name for q in d.iterdir()) == ["f00001.png", "f00002.png"]     # no .tmp.png left behind
 
 
+def test_figure_cli_blender_backend_writes_strip(tmp_path):
+    """`figure --backend blender --keyframes 0,1`: two preview stills through the CLI, tiled into one strip."""
+    import imageio.v3 as iio
+    from typer.testing import CliRunner
+    from wmviz.cli import app
+    out = tmp_path / "f.png"
+    r = CliRunner().invoke(app, ["--logs", str(FIX), "figure", "doorkey6x6/ep000004", "--backend", "blender",
+                                 "--preview", "--res", "160x90", "--samples", "4", "--keyframes", "0,1",
+                                 "--out", str(out)])
+    assert r.exit_code == 0, r.stdout
+    assert out.exists() and "keyframes: step 0, step 1" in r.stdout
+    img = iio.imread(out)
+    assert img.shape[1] > img.shape[0]
+
+
 def test_heatmap_still_and_frames(tmp_path):
     from wmviz.aggregate import accumulate
     from wmviz.render import render_heatmap_frames, render_heatmap_still

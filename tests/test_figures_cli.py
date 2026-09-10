@@ -32,6 +32,12 @@ def test_figure_mpl_single_and_keyframes(logs_dir, tmp_path):
     assert "step 3" in r.stdout and "· step 3" not in r.stdout
 
 
+def test_figure_empty_keyframes_is_a_bad_spec(logs_dir, tmp_path):
+    r = _inv(logs_dir, "figure", "p2e-doorkey6x6-s0/ep000003", "--backend", "mpl", "--keyframes", "",
+             "--out", str(tmp_path / "f.png"))
+    assert r.exit_code == 2 and "--keyframes" in r.stdout
+
+
 def test_figure_requires_out(logs_dir):
     r = _inv(logs_dir, "figure", "p2e-doorkey6x6-s0/ep000003", "--backend", "mpl")
     assert r.exit_code == 2 and "--out" in r.stdout

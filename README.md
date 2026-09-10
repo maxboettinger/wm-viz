@@ -350,6 +350,7 @@ wmviz/trace/selectors.py  Filters, apply_filters, sort_rows, pick
 wmviz/preview.py          ascii_map, save_png
 wmviz/compose.py          strips, grids, labels, HUD, picture-in-picture, split view (no bpy)
 wmviz/aggregate.py        visit-count aggregation, same-layout grouping (no bpy)
+wmviz/grid.py             MiniGrid palette and heading vectors shared by mpl and the bpy layer (no bpy)
 wmviz/mpl.py              matplotlib backend for figure/timeline/heatmap (no bpy)
 wmviz/scene/base.py       Style, materials, asset-library lookup, F-curve helpers (bpy)
 wmviz/scene/minigrid.py   build_scene: layout → Blender objects (bpy)

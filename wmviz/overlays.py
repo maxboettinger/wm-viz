@@ -9,7 +9,7 @@ import numpy as np
 
 from .aggregate import cumulative_visit_counts
 from .animate import AnimConfig, step_frame
-from .scene.base import fcurves, keyframe_hidden, link_only, make_object_color_material, new_collection
+from .scene.base import keyframe_hidden, link_only, make_object_color_material, new_collection, set_interpolation
 from .scene.minigrid import SceneObjects, cell_center
 from .trace.reader import Episode
 
@@ -79,13 +79,7 @@ def add_heatmap(sc: SceneObjects, ep: Episode, cfg: AnimConfig) -> None:
             tile.color = heat_color(c / peak)
             tile.keyframe_insert("color", frame=step_frame(t, cfg))
             prev = c
-        for fc in _color_fcurves(tile):
-            for kp in fc.keyframe_points:
-                kp.interpolation = "CONSTANT"
-
-
-def _color_fcurves(obj):
-    return [fc for fc in fcurves(obj) if fc.data_path == "color"]
+        set_interpolation(tile, True, data_path="color")
 
 
 def set_heatmap_static(sc: SceneObjects, counts: np.ndarray) -> None:

@@ -16,13 +16,13 @@ from typing import Callable
 import bpy
 from mathutils import Matrix
 
+from ..grid import COLOR_RGB, DIR_VEC
 from ..trace.reader import Layout
-from .base import (COLOR_RGB, Style, add_lighting, asset_or, link_only, make_color_material,
+from .base import (Style, add_lighting, asset_or, link_only, make_color_material,
                    make_floor_material, make_goal_material, make_wall_material, new_box,
                    new_collection, new_plane)
 
 YAW = {0: 0.0, 1: -math.pi / 2, 2: math.pi, 3: math.pi / 2}
-DIR_VEC = {0: (1, 0), 1: (0, 1), 2: (-1, 0), 3: (0, -1)}
 AGENT_Z = 0.25
 
 

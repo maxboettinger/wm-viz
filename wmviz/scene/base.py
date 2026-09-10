@@ -13,8 +13,6 @@ from typing import Callable
 
 import bpy
 
-from ..mpl import COLOR_RGB
-
 RGBA = tuple[float, float, float, float]
 
 ENGINES = {"eevee": "BLENDER_EEVEE", "cycles": "CYCLES"}

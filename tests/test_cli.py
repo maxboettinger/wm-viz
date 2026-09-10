@@ -2,6 +2,7 @@ import re
 
 from typer.testing import CliRunner
 
+import wmviz.cli
 import wmviz.preview
 from wmviz.cli import app
 
@@ -161,7 +162,8 @@ def test_pick_actor_latest(logs_dir):
     assert r.exit_code == 0 and r.stdout.strip() == "p2e-doorkey6x6-s0/ep000004"
 
 
-def test_render_target_resolution_errors(logs_dir):
+def test_render_target_resolution_errors(logs_dir, monkeypatch):
+    monkeypatch.setattr(wmviz.cli, "_need_bpy", lambda: None)      # `render` checks bpy first; not under test here
     stop = ("--save-blend", "x.blend", "--no-render")        # never reached: TARGET errors fire first
     r = _inv(logs_dir, "render", "p2e-doorkey6x6-s0", *stop)
     assert r.exit_code == 2 and "selector" in r.stdout
@@ -176,10 +178,11 @@ def test_render_default_camera_is_fpv_for_dream_episodes(logs_dir, monkeypatch):
     import wmviz.cli
     seen = []
 
-    def spy(idx, row, out, engine, samples, res, fps, frames_per_step, discrete, preview, camera, *rest):
-        seen.append(camera)
+    def spy(idx, row, out, **kw):
+        seen.append(kw["camera"])
         raise typer.Exit(0)
 
+    monkeypatch.setattr(wmviz.cli, "_need_bpy", lambda: None)      # the spy stops before anything renders
     monkeypatch.setattr(wmviz.cli, "_render_options", spy)
     for args in (("p2e-doorkey6x6-s0/ep000001",), ("p2e-doorkey6x6-s0/ep000006",),
                  ("p2e-doorkey6x6-s0/ep000006", "--camera", "iso")):
@@ -187,8 +190,9 @@ def test_render_default_camera_is_fpv_for_dream_episodes(logs_dir, monkeypatch):
     assert seen == ["topdown", "fpv", "iso"]
 
 
-def test_render_option_validation_exits_2(logs_dir, tmp_path):
-    """Argument errors are reported before the bpy check (and never write anything)."""
+def test_render_option_validation_exits_2(logs_dir, tmp_path, monkeypatch):
+    """Argument errors exit 2 and never write anything (bpy itself is checked first; stubbed out here)."""
+    monkeypatch.setattr(wmviz.cli, "_need_bpy", lambda: None)
     ref = "p2e-doorkey6x6-s0/ep000001"
     blend = str(tmp_path / "x.blend")
     r = _inv(logs_dir, "render", ref, "--no-render")
