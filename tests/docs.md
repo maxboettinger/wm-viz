@@ -4,7 +4,7 @@ Path: @/tests
 
 ### Overview
 
-The test suite exercises [wmviz/trace/](wmviz/trace/docs.md), [wmviz/preview.py](wmviz/preview.py), and [wmviz/cli.py](wmviz/cli.py) against two kinds of trace data: a synthetic trace built in-process to mirror the `wm` writer's format ([tests/conftest.py](tests/conftest.py)), and real trimmed traces recorded by the actual `wm` training loop ([tests/fixtures/](tests/fixtures)). The split exists so the fast, deterministic unit tests don't depend on real training runs, while a smaller contract test ([tests/test_fixtures_real.py](tests/test_fixtures_real.py)) still checks that `wmviz` correctly parses what `wm` actually writes.
+The test suite exercises [wmviz/trace/](wmviz/trace/docs.md), [wmviz/preview.py](wmviz/preview.py), [wmviz/cli.py](wmviz/cli.py) and the Blender layer ([wmviz/scene/](wmviz/scene), [wmviz/animate.py](wmviz/animate.py), [wmviz/cameras.py](wmviz/cameras.py)) against two kinds of trace data: a synthetic trace built in-process to mirror the `wm` writer's format ([tests/conftest.py](tests/conftest.py)), and real trimmed traces recorded by the actual `wm` training loop ([tests/fixtures/](tests/fixtures)). The split exists so the fast, deterministic unit tests don't depend on real training runs, while a smaller contract test ([tests/test_fixtures_real.py](tests/test_fixtures_real.py)) still checks that `wmviz` correctly parses what `wm` actually writes.
 
 ### How it fits into the larger codebase
 
@@ -24,6 +24,6 @@ This is the only consumer of `wmviz`'s public API from outside the package itsel
 
 - The synthetic and real fixtures are deliberately kept separate: the synthetic `run_dir` fixture is the fast/deterministic path used by most tests, while `test_fixtures_real.py` alone exists to catch drift between `wmviz`'s assumptions and what `wm` actually writes on disk.
 - `tests/conftest.py`'s inline comment and the module docstring both point back at spec §1 as the source of truth for the trace format — changes to that format need to land in both `wm` and here.
-- `pyproject.toml`'s `[tool.pytest.ini_options]` restricts test discovery to `testpaths = ["tests"]` and declares a `slow` marker (for tests needing `bpy` or long renders) that is not yet used by any test in this directory, since Blender rendering isn't implemented.
+- `pyproject.toml`'s `[tool.pytest.ini_options]` restricts test discovery to `testpaths = ["tests"]` and declares a `slow` marker for tests needing `bpy` or long renders. The Blender tests (`test_scene.py`, `test_animate.py`, `test_cameras.py`) all start with `bpy = pytest.importorskip("bpy")` and `pytestmark = pytest.mark.slow`, call `reset_scene()` first, and read transforms only after `scene.frame_set(...)`, because `matrix_world`/`dimensions` are stale until the depsgraph is evaluated. They run against the real `doorkey6x6` fixture rather than the synthetic run.
 
 Created and maintained by Nori.
