@@ -42,7 +42,7 @@ Optional extras:
 
 ```bash
 uv sync --extra figures      # matplotlib PNG previews without the dev group
-uv sync --extra blender      # bpy — reserved for the planned renderer
+uv sync --extra blender      # bpy — the Blender renderer (`wmviz render`)
 ```
 
 Run the CLI with `uv run wmviz …`, or activate the venv and call `wmviz`
@@ -227,6 +227,6 @@ an upstream naming quirk in `minigrid`, documented in the fixtures README.
 
 ## Roadmap
 
-- Blender rendering (`render`, `figure`, `timeline`, `heatmap`) of picked
-  episodes.
+- Blender figure commands (`figure`, `timeline`, `heatmap`) on top of the
+  existing `render` pipeline.
 - Dream-diagnostics traces (`phase=dream`) once `wm` records them.

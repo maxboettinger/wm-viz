@@ -4,7 +4,7 @@ Path: @/
 
 ### Overview
 
-`wm-viz` (Python package `wmviz`) is the record → select → render companion to the `wm` reinforcement-learning research repo. `wm` records every training/eval episode as a ground-truth trace on disk; `wmviz` reads those traces, lets a user filter/sort/pick among episodes, and previews them — today via a terminal ASCII map or a matplotlib PNG ([wmviz/preview.py](wmviz/preview.py)), with Blender-based 3D rendering planned but not yet implemented.
+`wm-viz` (Python package `wmviz`) is the record → select → render companion to the `wm` reinforcement-learning research repo. `wm` records every training/eval episode as a ground-truth trace on disk; `wmviz` reads those traces, lets a user filter/sort/pick among episodes, and previews them via a terminal ASCII map or a matplotlib PNG ([wmviz/preview.py](wmviz/preview.py)), or renders them in Blender ([wmviz/render.py](wmviz/render.py), optional trail/heatmap overlays in [wmviz/overlays.py](wmviz/overlays.py)); the aggregate figure commands are still in progress.
 
 ### How it fits into the larger codebase
 
