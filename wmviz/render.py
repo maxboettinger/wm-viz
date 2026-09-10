@@ -197,6 +197,12 @@ def render_still(ep: Episode, row: IndexRow, cfg: RenderConfig, step: int) -> np
     return next(iter(_composited(ep, row, cfg, cams, [f])))
 
 
+def frames_composited(ep: Episode, row: IndexRow, cfg: RenderConfig) -> list[np.ndarray]:
+    """Every composited frame of the episode's animation (renders first, resumable)."""
+    _, cams, last = build(ep, cfg)
+    return list(_composited(ep, row, cfg, cams, range(1, last + 1)))
+
+
 def render_episode(ep: Episode, row: IndexRow, cfg: RenderConfig) -> Path:
     from .animate import step_frame
     from .scene.base import save_blend

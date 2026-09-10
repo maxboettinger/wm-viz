@@ -354,6 +354,84 @@ def figure(target: str,
     console.print(f"wrote {out}")
 
 
+def _same_layout_or_fail(rows, force: bool) -> str:
+    from .aggregate import LayoutMismatch, same_layout
+    try:
+        return same_layout(rows, force=force)
+    except (LayoutMismatch, ValueError) as e:
+        _fail(str(e))
+
+
+def _milestones(s: str) -> list[int]:
+    try:
+        return [int(v) for v in s.split(",") if v.strip()]
+    except ValueError:
+        _fail(f"--milestones must be a comma list of steps, got {s!r}", 2)
+
+
+def _figure_images(idx, rows, backend: str, camera, preview, engine, samples, res, assets):
+    from .mpl import figure_image
+    images = []
+    for row in rows:
+        ep = Episode.load(idx.path_of(row))
+        if backend == "mpl":
+            images.append(figure_image(ep))
+        else:
+            from .render import RenderConfig, render_still
+            opts = _render_options(idx, row, Path("x.png"), engine, samples, res, 24, 6, False, preview, camera,
+                                   True, True, False, None, None, False, assets, "pip")
+            images.append(render_still(ep, row, RenderConfig(**opts), ep.length))
+    return images
+
+
+@app.command()
+def timeline(run: str,
+             seed: int = typer.Option(..., "--seed", help="eval/coverage-eval seed (fixed layout)"),
+             milestones: str = typer.Option(..., "--milestones", help="comma list of env steps"),
+             out: Path = typer.Option(..., "--out", help="png (or mp4 with --video)"),
+             phase: str = typer.Option("coverage_eval", "--phase"),
+             backend: Optional[str] = typer.Option(None, "--backend"),
+             video: bool = typer.Option(False, "--video", help="tile the animations in sync instead of stills"),
+             camera: str = typer.Option("topdown", "--camera"),
+             preview: bool = typer.Option(False, "--preview"), force: bool = typer.Option(False, "--force"),
+             engine: str = typer.Option("eevee", "--engine"), samples: int = typer.Option(64, "--samples"),
+             res: str = typer.Option("1920x1080", "--res"), fps: int = typer.Option(24, "--fps"),
+             assets: Optional[Path] = typer.Option(None, "--assets")):
+    """Exploration over training: the seed-S episode nearest each milestone, as a labelled strip (or tiled video)."""
+    from .aggregate import nearest_to_milestones
+    idx = _index(run)
+    rows = apply_filters(idx.rows, Filters(phase=phase, layout=f"seed:{seed}"))
+    if not rows:
+        _fail(f"{run} has no {phase} episodes with seed {seed}" + _no_match_hint(idx, rows))
+    picked = nearest_to_milestones(rows, _milestones(milestones))
+    _same_layout_or_fail(picked, force)
+    labels = [f"step {r.start_step}" for r in picked]
+    console.print("episodes: " + ", ".join(f"{r.ref(idx.run_name)} ({l})" for r, l in zip(picked, labels)))
+    be = _backend(backend)
+    if video and be == "mpl":
+        _fail("--video needs the Blender backend (uv sync --extra blender)")
+    if be == "blender":
+        _need_bpy()
+    from .compose import grid, label, strip
+    if not video:
+        images = _figure_images(idx, picked, be, camera, preview, engine, samples, res, assets)
+        _write_image(strip(images, labels), out)
+    else:
+        from .render import RenderConfig, frames_composited, write_mp4
+        seqs = []
+        for row in picked:
+            ep = Episode.load(idx.path_of(row))
+            opts = _render_options(idx, row, out.parent / f"{out.stem}_{row.episode_id:06d}.mp4", engine, samples,
+                                   res, fps, 6, False, preview, camera, True, True, False, None, None, False,
+                                   assets, "pip")
+            seqs.append(frames_composited(ep, row, RenderConfig(**opts)))
+        n = max(len(s) for s in seqs)
+        cols = min(len(seqs), 3)
+        frames = (grid([label(s[min(i, len(s) - 1)], l) for s, l in zip(seqs, labels)], cols=cols) for i in range(n))
+        write_mp4(frames, out.with_suffix(".mp4"), fps)
+    console.print(f"wrote {out}")
+
+
 @app.command()
 def show(ref: str, png: Optional[Path] = typer.Option(None, "--png", help="also write a PNG preview")):
     """Stats and an ASCII top-down map of one episode (<run>/ep000123)."""

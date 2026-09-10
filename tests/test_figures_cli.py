@@ -51,3 +51,28 @@ def test_figure_blender_reports_missing_bpy(logs_dir, tmp_path, monkeypatch):
     monkeypatch.setattr(builtins, "__import__", fake_import)
     r = _inv(logs_dir, "figure", "p2e-doorkey6x6-s0/ep000003", "--backend", "blender", "--out", str(tmp_path / "x.png"))
     assert r.exit_code == 1 and "uv sync --extra blender" in r.stdout
+
+
+def test_timeline_mpl_strip(logs_dir, tmp_path):
+    r = _inv(logs_dir, "timeline", "p2e-doorkey6x6-s0", "--seed", "1000", "--milestones", "0,250,1000",
+             "--phase", "eval", "--backend", "mpl", "--out", str(tmp_path / "t.png"))
+    assert r.exit_code == 0, r.stdout
+    assert (tmp_path / "t.png").exists() and "step 100" in r.stdout and "step 300" in r.stdout
+
+
+def test_timeline_refuses_mixed_layouts_unless_forced(logs_dir, tmp_path, monkeypatch):
+    import wmviz.cli as cli
+    orig = cli._same_layout_or_fail
+    monkeypatch.setattr(cli, "_same_layout_or_fail", lambda rows, force: orig(
+        rows + [type(rows[0])(**{**rows[0].__dict__, "layout_hash": "ffffffffffff"})], force))
+    r = _inv(logs_dir, "timeline", "p2e-doorkey6x6-s0", "--seed", "1000", "--milestones", "0",
+             "--phase", "eval", "--backend", "mpl", "--out", str(tmp_path / "t.png"))
+    assert r.exit_code == 1 and "--force" in r.stdout
+    r = _inv(logs_dir, "timeline", "p2e-doorkey6x6-s0", "--seed", "1000", "--milestones", "0",
+             "--phase", "eval", "--backend", "mpl", "--force", "--out", str(tmp_path / "t.png"))
+    assert r.exit_code == 0, r.stdout
+
+
+def test_timeline_needs_seed_milestones_and_out(logs_dir):
+    r = _inv(logs_dir, "timeline", "p2e-doorkey6x6-s0", "--milestones", "0")
+    assert r.exit_code == 2
