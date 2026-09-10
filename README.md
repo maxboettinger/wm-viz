@@ -1,6 +1,6 @@
 # wm-viz
 
-Browse and preview the episodes recorded by the [wm](https://github.com/neural-data-science-lab/wm)
+Browse, preview and render the episodes recorded by the [wm](https://github.com/neural-data-science-lab/wm)
 exploration benchmark.
 
 `wm` writes a compact ground-truth trace of every episode it plays: the
@@ -9,50 +9,54 @@ carried, which doors it opened, actions and rewards. `wmviz` reads those
 traces so you can answer questions like *"show me the first episode where
 the Plan2Explore agent reached the goal"* or *"which coverage-eval episode
 at step 50k visited the most cells"* — and look at it, right in the
-terminal or as a PNG.
+terminal, as a PNG, or as a rendered Blender animation.
 
-```
-$ wmviz show doorkey6x6/ep000004
-doorkey6x6/ep000004  MiniGrid-DoorKey-6x6-v0  phase=train_explorer actor=explorer seed=  steps 0→654
-length=327 return=0.182 success=True cells=11 coverage=85% key@102 door@119 goal@327 rooms= layout=9fe74bfc54b6
-######
-#72#.#
-#**#.#
-#S*D*#
-#*K#E#
-######
-# wall  D door  K key  G goal  S start  E end  digits = visits
-```
+![A DoorKey-6x6 training episode, top-down, with the exploration trail (coloured by time) and the visit heatmap](docs/doorkey6x6-ep4.png)
 
-Rendering episodes as Blender animations is the next planned step and is
-not implemented yet; today `wmviz` covers *record → select → preview*.
+*`wmviz render doorkey6x6/ep000004 --preview --trail --heatmap --hud --still 327`
+— rendered against `tests/fixtures`, 960×540, no camera tricks.*
+
+Rendering is implemented: `wmviz render` produces Blender animations and
+stills, `figure`/`timeline`/`heatmap` build static and animated figures on
+top of it, and everything also runs through a matplotlib fallback that
+needs no Blender.
 
 ## Installation
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.11 (pinned, because
-the Blender `bpy` wheel only exists for 3.11).
+the Blender `bpy` wheel only exists for 3.11 — this repo was verified
+against `bpy` 5.0.1).
 
 ```bash
 git clone https://github.com/maxboettinger/wm-viz
 cd wm-viz
-uv sync --group dev          # CLI, reader, ASCII + PNG previews, tests
+uv sync --extra blender --group dev     # everything: CLI, reader, previews, renderer, tests
 ```
 
-Optional extras:
+Smaller installs:
 
 ```bash
-uv sync --extra figures      # matplotlib PNG previews without the dev group
-uv sync --extra blender      # bpy — the Blender renderer (`wmviz render`)
+uv sync --group dev          # CLI, reader, ASCII + PNG previews, tests — no Blender
+uv sync --extra figures      # matplotlib PNG previews only, no dev group
+uv sync --extra blender      # bpy — needed for `render`/`figure`/`timeline`/`heatmap`'s Blender backend
 ```
 
 Run the CLI with `uv run wmviz …`, or activate the venv and call `wmviz`
 directly.
 
+Without `bpy`, `figure`, `timeline` and `heatmap` still work through
+`--backend mpl` (or fall back to it automatically); `render` needs `bpy`.
+For manual tweaking, `wmviz render … --save-blend out.blend --no-render`
+stops after writing the scene — no render, no mp4 — so you can open
+`out.blend` in Blender ≥ 5.0 and look around, move lights, or hand-render
+a frame yourself.
+
 ## Quick start
 
 Point `wmviz` at a `wm` logs directory, either with `--logs` or the
-`WMVIZ_LOGS` environment variable. Two small real runs are checked in as
-test fixtures, so you can try everything without training anything:
+`WMVIZ_LOGS` environment variable. Three small real runs are checked in as
+test fixtures (one of them dream episodes), so you can try everything
+without training anything:
 
 ```bash
 export WMVIZ_LOGS=tests/fixtures      # later: /path/to/wm/logs
@@ -68,12 +72,13 @@ wmviz show doorkey6x6/ep000004 --png ep4.png
 
 ```
 $ wmviz runs
-┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━┓
-┃ run            ┃ env                         ┃ exploration  ┃ episodes ┃ last step ┃
-┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━┩
-│ doorkey6x6     │ MiniGrid-DoorKey-6x6-v0     │ plan2explore │ 10       │ 800       │
-│ multiroom-n4s5 │ MiniGrid-MultiRoom-N4-S5-v0 │ plan2explore │ 12       │ 800       │
-└────────────────┴─────────────────────────────┴──────────────┴──────────┴───────────┘
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━┓
+┃ run              ┃ env                         ┃ exploration  ┃ episodes ┃ last step ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━┩
+│ doorkey6x6       │ MiniGrid-DoorKey-6x6-v0     │ plan2explore │ 10       │ 800       │
+│ dream-doorkey6x6 │ MiniGrid-DoorKey-6x6-v0     │ plan2explore │ 4        │ 400       │
+│ multiroom-n4s5   │ MiniGrid-MultiRoom-N4-S5-v0 │ plan2explore │ 12       │ 800       │
+└──────────────────┴─────────────────────────────┴──────────────┴──────────┴───────────┘
 
 $ wmviz list multiroom-n4s5 --limit 3
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━┳━━━━━━━┳━━━━━┳━━━━━━━━┳━━━━┳━━━━━━━┳━━━━━━┳━━━━━━┳━━━━━━━┳━━━━━━━┳━━━━━━━┳━━━━━━━━┓
@@ -93,6 +98,21 @@ wmviz show $(wmviz pick p2e-n6-s0 --best-return --phase eval)
 wmviz show $(wmviz pick p2e-n6-s0 --most-cells --phase coverage_eval --at-step 50000) --png best.png
 ```
 
+Rendering, once `bpy` is installed (`uv sync --extra blender`):
+
+```bash
+wmviz render doorkey6x6/ep000004 --preview --trail --hud            # mp4, ~0.35 s/frame
+wmviz render doorkey6x6 --first-success --camera follow,topdown --still 120 --out key.png
+wmviz figure doorkey6x6/ep000004 --keyframes auto --out strip.png     # key / door / goal / end
+wmviz timeline multiroom-n4s5 --seed 2000 --milestones 0,400,800 --out timeline.png
+wmviz heatmap multiroom-n4s5 --layout seed:2000 --out heat.png
+```
+
+All five were run once against `tests/fixtures` before going into this
+README (`--backend mpl` on `figure`/`timeline`/`heatmap` skips Blender
+entirely if you don't have `bpy`). The `render` line above writes an mp4;
+`--still N` (used on the second line) writes a PNG for step `N` instead.
+
 ## Command reference
 
 | Command | What it does |
@@ -101,12 +121,17 @@ wmviz show $(wmviz pick p2e-n6-s0 --most-cells --phase coverage_eval --at-step 5
 | `wmviz list RUN` | Prints the episodes of a run as a table. Accepts the filters below plus `--sort`, `--asc`, `--limit` |
 | `wmviz pick RUN` | Applies the filters, then one selector, and prints exactly one `<run>/ep000123` reference. Fails with a hint if nothing matches |
 | `wmviz show REF` | Prints an episode's stats and an ASCII top-down map; `--png PATH` also writes a matplotlib preview |
-| `wmviz render TARGET` | Renders one episode (`<run>/ep000123`, or a run plus one selector) as a Blender mp4 or `--still N` PNG; `--camera` defaults to `topdown`, or `fpv` for dream episodes, which get the real observation and the world model's view composited in (`--dream-layout pip|split`, white frame while the model tracks reality, black once it dreams) |
+| `wmviz render TARGET` | Renders one episode as a Blender mp4, or a `--still N` PNG. `--camera` defaults to `topdown` (`fpv` for dream episodes); `--trail`, `--heatmap`, `--hud` add overlays |
+| `wmviz figure TARGET` | One still of an episode (top-down, trail + heatmap on by default); `--keyframes auto\|3,57,120` composes a labelled strip instead of a single image |
+| `wmviz timeline RUN` | The seed-`S` episode nearest each `--milestones` step, as a labelled strip; `--video` tiles the animations in sync instead |
+| `wmviz heatmap RUN` | Visit counts accumulated over the selected episodes of one layout; `--animate` fills the floor in episode by episode (mp4), `--compare RUN2` puts a second run side by side |
 
+`render`, `figure`, `timeline` and `heatmap` all target one or more
+episodes via `TARGET`/`RUN` plus the filters and selectors below.
 Episode references look like `<run>/ep000123`; `<run>/123` is accepted
 too.
 
-**Filters** (shared by `list` and `pick`):
+**Filters** (shared by `list`, `pick`, `render`, `figure`):
 
 | Option | Keeps episodes that… |
 |---|---|
@@ -122,7 +147,8 @@ too.
 (default `episode_id`, descending; `--asc` flips it; `--limit` caps rows,
 default 50).
 
-**Selectors** (`pick`, exactly one):
+**Selectors** (`pick`, and `render`/`figure` in place of a `<run>/ep000123`
+target — exactly one):
 
 | Selector | Picks the episode with… |
 |---|---|
@@ -132,6 +158,105 @@ default 50).
 | `--first-key` / `--first-door` | the earliest key pickup / door opening |
 | `--at-step N` | the closest start step to `N` |
 | `--latest` | the highest start step |
+
+### `render` options
+
+*What to draw:*
+
+| Option | Meaning |
+|---|---|
+| `--camera C[,C2,…]` | `topdown`, `follow`, `fpv`, `orbit`, `iso`; a comma list renders each and composites them side by side. Default `topdown`, or `fpv` for dream episodes |
+| `--trail` | one thin cylinder per moved step, coloured by time (viridis-like) |
+| `--heatmap` | floor tiles glow by cumulative visit count (black → red → yellow), growing during the animation |
+| `--hud` | run/episode id, phase, actor, step and return stamped in the corner |
+| `--dream-layout pip\|split` | dream episodes only — picture-in-picture inset or a side-by-side split; see [Dream vs. reality](#dream-vs-reality) |
+
+*Quality / cost:*
+
+| Option | Meaning |
+|---|---|
+| `--engine eevee\|cycles` | default `eevee` |
+| `--samples N` | render samples, default 64 (Cycles only matters much) |
+| `--res WxH` | default `1920x1080`, must be even in both dimensions (libx264) |
+| `--fps N` | output frame rate, default 24 |
+| `--frames-per-step N` | Blender frames per env step, default 6 |
+| `--discrete` | no interpolation between steps (snaps instead of tweening) |
+| `--preview` | shortcut for `--res 960x540` and 3 frames per step |
+
+*Outputs:*
+
+| Option | Meaning |
+|---|---|
+| `--out PATH` | mp4, or PNG with `--still`; default `renders/<run>/<ep>.mp4` |
+| `--still N` | render one frame at step `N` instead of the whole animation |
+| `--save-blend PATH` | write the built scene as a `.blend` |
+| `--no-render` | stop after `--save-blend` (needs it) — the GUI path |
+| `--assets PATH` | asset library `.blend`; see [Asset library](#asset-library) |
+
+### Render cost
+
+Measured on Apple Silicon (Metal):
+
+| Setting | Cost |
+|---|---|
+| Eevee, 960×540 (`--preview`) | ≈ 0.35 s/frame steady state |
+| Eevee, 1920×1080 (default) | ≈ 1 s/frame |
+| Cycles, 1920×1080, 64 samples | ≈ 22 s per still |
+| `--preview` mp4, full 327-step episode (982 frames @ 3 frames/step) | ≈ 5.7 min |
+
+**Resume:** frames render to `<out stem>_frames/<camera>/f00001.png…`
+first, and a completed frame is skipped on the next run — an interrupted
+render (or a re-run with the same settings) only renders what's missing.
+`<out stem>_frames/render.json` fingerprints the settings that change a
+pixel (resolution, engine, samples, frames-per-step, discrete, cameras,
+trail, heatmap, assets); if it doesn't match the current invocation, the
+whole folder is wiped and re-rendered from scratch. Delete the folder
+yourself to force a full re-render. Each frame renders to a `.tmp.png`
+first and is atomically renamed, so a killed render never leaves a
+half-written PNG behind.
+
+## Asset library
+
+`--assets lib.blend` swaps the procedural primitives for objects from your
+own `.blend` file, looked up by name: `Agent`, `Key`, `DoorPanel`,
+`DoorFrame`, `Wall`, `Floor`, `Goal`. Any name not found in the library
+falls back to the procedural version, so a partial library (e.g. just a
+nicer `Agent`) works fine. Library objects are relinked into the scene's
+per-type collections (`Floor`, `Walls`, `Doors`, `Items`, `Agent`) like
+everything else.
+
+One gotcha: a library `DoorPanel` must have its mesh origin at the hinge
+edge and extend along local **+X** — the scene builder sets its `location`
+to the hinge cell and its `rotation_euler.z` to the wall's yaw, the same
+way the procedural panel is placed, so an origin anywhere else makes the
+door swing from the wrong point.
+
+## Dream vs. reality
+
+Episodes with `phase=dream` are recorded by `train_dreamer.py` at every
+`--video-every` checkpoint (`--dream-actor task|explorer|both` controls
+which policy dreams). For these, `render` defaults to `--camera fpv` — eye
+height, agent yaw — because that's the view the world model's decoded
+frames are meant to compare against.
+
+The world model tracks the real episode for the first `dream_start` steps
+(posterior reconstructions), then dreams open-loop for the rest
+(imagined states). `render` composites the small decoded frames onto the
+Blender view:
+
+- `--dream-layout pip` (default) — "real obs" and "dream"/"recon" insets
+  in a corner.
+- `--dream-layout split` — Blender view and decoded frame side by side at
+  equal size.
+
+Either way, a **white** border/divider means the model is still tracking
+(posterior reconstruction); it turns **black** once the model starts
+dreaming (open-loop imagination) at `dream_start`. `--still N` renders one
+labelled panel, handy for a paper figure.
+
+```bash
+wmviz render dream-doorkey6x6/ep000002 --preview --still 10 --hud --out dream.png
+```
 
 ## Reading the map
 
@@ -208,16 +333,31 @@ this file contract.
 wmviz/trace/reader.py     Index, IndexRow, Episode, Layout, parse_ref, find_runs
 wmviz/trace/selectors.py  Filters, apply_filters, sort_rows, pick
 wmviz/preview.py          ascii_map, save_png
-wmviz/cli.py              the wmviz command (runs, list, pick, show, render, figure)
+wmviz/compose.py          strips, grids, labels, HUD, picture-in-picture, split view (no bpy)
+wmviz/aggregate.py        visit-count aggregation, same-layout grouping (no bpy)
+wmviz/mpl.py              matplotlib backend for figure/timeline/heatmap (no bpy)
+wmviz/scene/base.py       Style, materials, asset-library lookup, F-curve helpers (bpy)
+wmviz/scene/minigrid.py   build_scene: layout → Blender objects (bpy)
+wmviz/animate.py          keyframes agent, doors, carried key (bpy)
+wmviz/cameras.py          topdown/follow/fpv/orbit/iso presets (bpy)
+wmviz/overlays.py         trail, heatmap overlays (bpy)
+wmviz/render.py           RenderConfig, frame rendering, resume, mp4 (bpy at call time)
+wmviz/cli.py              the wmviz command (runs, list, pick, show, render, figure, timeline, heatmap)
 scripts/trim_trace.py     trims a full wm trace down to a small fixture
 tests/                    unit tests + contract tests against real wm traces
 tests/fixtures/           three real, trimmed runs, one of them dream episodes (see tests/fixtures/README.md)
 ```
 
+Modules under `wmviz/scene/` plus `animate.py`, `cameras.py`, `overlays.py`
+and `render.py` import `bpy`; everything else (`trace/`, `preview.py`,
+`compose.py`, `aggregate.py`, `mpl.py`) does not, so listing, filtering and
+matplotlib previews work without Blender installed. `bpy` is imported
+lazily inside functions, never at module import time.
+
 ## Development
 
 ```bash
-uv sync --group dev
+uv sync --extra blender --group dev
 uv run pytest -q
 ```
 
@@ -226,10 +366,22 @@ uv run pytest -q
 so a format drift in `wm` shows up here. To refresh the fixtures after a
 `wm` format change, follow `tests/fixtures/README.md`.
 
+Tests that need `bpy` (scene building, rendering) are marked `slow` and
+skip automatically when `bpy` isn't importable. Without Blender:
+
+```bash
+uv sync --group dev
+uv run pytest -q -m "not slow"     # 80 of 124 tests, no bpy needed
+```
+
 Note that `MiniGrid-MultiRoom-N4-S5-v0` generates six rooms, not four —
 an upstream naming quirk in `minigrid`, documented in the fixtures README.
 
 ## Roadmap
 
-- Blender figure commands (`timeline`, `heatmap`) on top of the existing
-  `render` pipeline.
+- Ghost agent from a position probe: render a translucent agent at the
+  world model's believed position during dreaming, from
+  `analysis/probe_latents.py` (spec §5 future extension).
+- MiniWorld family: a second `scene/` builder and `TraceExtractor` for
+  continuous 3D envs, behind the same `env_family` dispatch the trace
+  format already reserves.
