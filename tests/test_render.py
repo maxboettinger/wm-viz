@@ -121,3 +121,33 @@ def test_render_frames_ignores_tmp_and_empty_files(tmp_path):
     assert [p.name for p in paths] == ["f00001.png", "f00002.png"]
     assert all(p.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n" and p.stat().st_size > 100 for p in paths)
     assert sorted(q.name for q in d.iterdir()) == ["f00001.png", "f00002.png"]     # no .tmp.png left behind
+
+
+def test_heatmap_still_and_frames(tmp_path):
+    from wmviz.aggregate import accumulate
+    from wmviz.render import render_heatmap_frames, render_heatmap_still
+    idx = Index.load(FIX / "doorkey6x6")
+    rows = [r for r in idx.rows if r.phase == "eval" and r.seed == 1000]
+    eps = [(r, Episode.load(idx.path_of(r))) for r in rows]
+    lay = eps[0][1].layout
+    cfg = RenderConfig(out=tmp_path / "h.png", preview=True, hud=True)
+    img = render_heatmap_still(lay, accumulate([e for _, e in eps], lay.width, lay.height), cfg)
+    assert img.shape == (540, 960, 3)
+    frames = render_heatmap_frames(lay, eps, cfg, frames_per_episode=2)
+    assert len(frames) == 2 * len(eps) and frames[0].shape == (540, 960, 3)
+
+
+def test_heatmap_frames_are_not_resumed_across_selections(tmp_path):
+    """The frames cache is keyed by RenderConfig.fingerprint(), which knows nothing about *which*
+    episodes were selected — so the heatmap renders stamp a digest of the counts they paint into
+    `cfg.extra`: reusing `--out` for a different selection must not resume the stale PNG."""
+    from wmviz.render import render_heatmap_still
+    ep, _ = _ep()
+    lay = ep.layout
+    cfg = RenderConfig(out=tmp_path / "h.png", res=(160, 90), samples=4)
+    a = np.zeros((lay.width, lay.height), np.int64); a[1, 1] = 5
+    b = np.zeros((lay.width, lay.height), np.int64); b[lay.width - 2, lay.height - 2] = 5
+    ia = render_heatmap_still(lay, a, cfg)
+    ib = render_heatmap_still(lay, b, cfg)
+    assert not np.array_equal(ia, ib)
+    assert np.array_equal(render_heatmap_still(lay, b, cfg), ib)          # same counts → resumed, same image

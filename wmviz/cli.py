@@ -461,6 +461,81 @@ def timeline(run: str,
     console.print(f"wrote {out}")
 
 
+def _heatmap_rows(run: str, layout, until_step, phase, actor, force) -> tuple[Index, list[IndexRow]]:
+    """Episodes of `run` that go into one heatmap (all on one layout unless `force`)."""
+    idx = _index(run)
+    rows = apply_filters(idx.rows, Filters(phase=phase, actor=actor, layout=layout))
+    if until_step is not None:
+        rows = [r for r in rows if r.end_step <= until_step]
+    if not rows:
+        _fail(f"{run}: no episodes match" + (f" --layout {layout}" if layout else "") + _no_match_hint(idx, rows))
+    _same_layout_or_fail(rows, force)
+    return idx, rows
+
+
+def _heatmap_image(idx, rows, backend: str, animate: bool, out: Path, preview, engine, samples, res, fps, assets):
+    """One heatmap image of `rows` — or, with `animate` (blender only), its list of frames."""
+    from .aggregate import accumulate
+    eps = [(r, Episode.load(idx.path_of(r))) for r in rows]
+    lay = eps[0][1].layout
+    counts = accumulate([e for _, e in eps], lay.width, lay.height)
+    if backend == "mpl":
+        from .mpl import heatmap_image
+        return heatmap_image(lay, counts)
+    from .render import RenderConfig, render_heatmap_frames, render_heatmap_still
+    cfg = RenderConfig(out=out, engine=engine, samples=samples, res=_parse_res(res), fps=fps, preview=preview,
+                       hud=True, assets=assets, extra={"n_episodes": len(eps)})
+    if animate:
+        return render_heatmap_frames(lay, eps, cfg)
+    return render_heatmap_still(lay, counts, cfg)
+
+
+@app.command()
+def heatmap(run: str,
+            out: Path = typer.Option(..., "--out", help="png (mp4 with --animate)"),
+            layout: Optional[str] = _LAYOUT,
+            until_step: Optional[int] = typer.Option(None, "--until-step", help="only episodes that ended by this step"),
+            phase: Optional[str] = _PHASE, actor: Optional[str] = _ACTOR,
+            animate: bool = typer.Option(False, "--animate", help="floor fills in episode by episode (mp4)"),
+            compare: Optional[str] = typer.Option(None, "--compare", help="second run, same layout, side by side"),
+            backend: Optional[str] = typer.Option(None, "--backend"),
+            preview: bool = typer.Option(False, "--preview"), force: bool = typer.Option(False, "--force"),
+            engine: str = typer.Option("eevee", "--engine"), samples: int = typer.Option(64, "--samples"),
+            res: str = typer.Option("1920x1080", "--res"), fps: int = typer.Option(6, "--fps"),
+            assets: Optional[Path] = typer.Option(None, "--assets")):
+    """Visit counts accumulated over the selected episodes of one layout, as a Blender (or matplotlib) still."""
+    be = _backend(backend)
+    if animate and be == "mpl":
+        _fail("--animate needs the Blender backend (uv sync --extra blender)")
+    if be == "blender":
+        _need_bpy()
+    runs = [run] + ([compare] if compare else [])
+    selected = []
+    for name in runs:
+        idx, rows = _heatmap_rows(name, layout, until_step, phase, actor, force)
+        console.print(f"{name}: {len(rows)} episodes on layout {rows[0].layout_hash[:8]}")
+        selected.append((idx, rows))
+    if compare:
+        _same_layout_or_fail([r for _, rows in selected for r in rows], force)
+    from .compose import hstack, label
+    # a compared run renders into its own `<out stem>_<run>` frames cache, so the two never share PNGs
+    results = [_heatmap_image(idx, rows, be, animate, out if len(runs) == 1 else out.with_stem(f"{out.stem}_{name}"),
+                              preview, engine, samples, res, fps, assets)
+               for name, (idx, rows) in zip(runs, selected)]
+
+    def tiled(images):
+        return images[0] if not compare else hstack([label(im, name) for im, name in zip(images, runs)], gap=8)
+
+    if animate:
+        from .render import write_mp4
+        n = max(len(r) for r in results)
+        held = [_hold_last(iter(r), n) for r in results]
+        out = write_mp4((tiled([next(h) for h in held]) for _ in range(n)), out.with_suffix(".mp4"), fps)
+    else:
+        _write_image(tiled(results), out)
+    console.print(f"wrote {out}")
+
+
 @app.command()
 def show(ref: str, png: Optional[Path] = typer.Option(None, "--png", help="also write a PNG preview")):
     """Stats and an ASCII top-down map of one episode (<run>/ep000123)."""

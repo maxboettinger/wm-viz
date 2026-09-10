@@ -4,10 +4,11 @@ interrupted render resumes — but only frames of the same settings: `<out stem>
 holds the RenderConfig fingerprint and a mismatching frames directory is wiped first."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -44,7 +45,7 @@ class RenderConfig:
     no_render: bool = False
     assets: Path | None = None
     dream_layout: str = "pip"
-    extra: dict = field(default_factory=dict)      # free-form, used by figure/heatmap
+    extra: dict = field(default_factory=dict)      # free-form (JSON-safe), used by figure/heatmap
 
     @property
     def anim(self):
@@ -69,7 +70,7 @@ class RenderConfig:
         return {"resolution": list(self.resolution), "engine": self.engine, "samples": int(self.samples),
                 "frames_per_step": a.frames_per_step, "discrete": bool(a.discrete),
                 "cameras": list(self.cameras), "trail": bool(self.trail), "heatmap": bool(self.heatmap),
-                "assets": None if self.assets is None else str(self.assets)}
+                "assets": None if self.assets is None else str(self.assets), "extra": self.extra}
 
 
 def prepare_frames_root(cfg: RenderConfig) -> Path:
@@ -238,3 +239,78 @@ def render_episode(ep: Episode, row: IndexRow, cfg: RenderConfig) -> Path:
         iio3.imwrite(out.with_suffix(".png"), img)
         return out.with_suffix(".png")
     return write_mp4(_composited(ep, row, cfg, cams, range(1, last + 1)), out.with_suffix(".mp4"), cfg.fps)
+
+
+def _heatmap_scene(layout, cfg: RenderConfig):
+    """Reset Blender and build `layout` with the agent hidden and the static top-down camera — the
+    scene shared by both heatmap renders. No episode is animated: the floor tiles carry the picture."""
+    from .cameras import add_camera
+    from .scene.base import configure_render, keyframe_hidden, reset_scene
+    from .scene.minigrid import build_scene
+    reset_scene()
+    sc = build_scene(layout, assets=cfg.assets)
+    keyframe_hidden(sc.agent, 1, True)
+    cam = add_camera("topdown", layout, None, cfg.anim)
+    configure_render(cfg.engine, cfg.samples, cfg.resolution, cfg.fps)
+    return sc, cam
+
+
+def _keyed(cfg: RenderConfig, *arrays: np.ndarray, **more) -> RenderConfig:
+    """`cfg` whose fingerprint also carries a digest of `arrays` (plus `more`). Heatmap frames depend on
+    the selected episodes' counts, not only on the render settings, so a reused `--out` must not
+    resume the frames of a different selection — the digest makes `prepare_frames_root` wipe them."""
+    h = hashlib.sha1()
+    for a in arrays:
+        h.update(np.ascontiguousarray(a, dtype=np.int64).tobytes())
+    return replace(cfg, extra={**cfg.extra, "content": h.hexdigest()[:16], **more})
+
+
+def render_heatmap_still(layout, counts: np.ndarray, cfg: RenderConfig) -> np.ndarray:
+    """One top-down frame of `layout` with `counts` (W×H visits) painted on the floor tiles."""
+    from .overlays import set_heatmap_static
+    cfg = _keyed(cfg, counts)
+    sc, cam = _heatmap_scene(layout, cfg)
+    set_heatmap_static(sc, counts)
+    prepare_frames_root(cfg)
+    path = render_frames(cam, [1], cfg.frames_dir("heatmap_still"))[0]
+    img = iio3.imread(path)[:, :, :3]
+    if cfg.hud:
+        img = hud(img, [f"{int(counts.sum())} visits over {cfg.extra.get('n_episodes', '?')} episodes"])
+    return img
+
+
+def render_heatmap_frames(layout, episodes: Sequence[tuple[IndexRow, Episode]], cfg: RenderConfig,
+                          frames_per_episode: int = 6) -> list[np.ndarray]:
+    """The floor fills in episode by episode (in `start_step` order): every episode's cumulative counts
+    are keyframed on the tiles at `1 + i * frames_per_episode` and Blender interpolates linearly in
+    between, so each episode's visits fade in over its `frames_per_episode` frames."""
+    import bpy
+    from .aggregate import visit_counts
+    from .overlays import heat_color
+    sc, cam = _heatmap_scene(layout, cfg)
+    episodes = sorted(episodes, key=lambda re: (re[0].start_step, re[0].episode_id))
+    W, H = layout.width, layout.height
+    total = np.zeros((W, H), np.int64)
+    cum = []
+    for _, ep in episodes:
+        total = total + visit_counts(ep.agent_pos, W, H)
+        cum.append(total.copy())
+    cfg = _keyed(cfg, np.stack(cum), frames_per_episode=int(frames_per_episode))
+    peak = max(int(cum[-1].max()), 1)
+    for i, counts in enumerate(cum):
+        f = 1 + i * frames_per_episode
+        for cell, tile in sc.floor.items():
+            tile.color = heat_color(int(counts[cell[0], cell[1]]) / peak)
+            tile.keyframe_insert("color", frame=f)
+    last = len(cum) * frames_per_episode
+    bpy.context.scene.frame_end = last
+    prepare_frames_root(cfg)
+    paths = render_frames(cam, range(1, last + 1), cfg.frames_dir("heatmap_anim"))
+    out = []
+    for i, (row, _) in enumerate(episodes):
+        for k in range(frames_per_episode):
+            img = iio3.imread(paths[i * frames_per_episode + k])[:, :, :3]
+            if cfg.hud:
+                img = hud(img, [f"step {row.start_step}", f"{i + 1}/{len(episodes)} episodes"])
+            out.append(img)
+    return out

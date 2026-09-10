@@ -99,3 +99,32 @@ def test_hold_last_freezes_on_final_item():
     assert list(_hold_last(iter([1, 2, 3]), 5)) == [1, 2, 3, 3, 3]
     assert list(_hold_last(iter([1, 2, 3]), 3)) == [1, 2, 3]
     assert list(_hold_last(iter(["only"]), 4)) == ["only"] * 4
+
+
+def test_heatmap_mpl_and_compare(logs_dir, tmp_path):
+    r = _inv(logs_dir, "heatmap", "p2e-doorkey6x6-s0", "--layout", "seed:1000", "--backend", "mpl",
+             "--out", str(tmp_path / "h.png"))
+    assert r.exit_code == 0, r.stdout
+    assert (tmp_path / "h.png").exists() and "2 episodes" in r.stdout
+    r = _inv(logs_dir, "heatmap", "p2e-doorkey6x6-s0", "--layout", "seed:1000", "--until-step", "150",
+             "--backend", "mpl", "--out", str(tmp_path / "h2.png"))
+    assert r.exit_code == 0 and "1 episodes" in r.stdout
+    r = _inv(logs_dir, "heatmap", "p2e-doorkey6x6-s0", "--layout", "seed:1000", "--compare", "p2e-doorkey6x6-s0",
+             "--backend", "mpl", "--out", str(tmp_path / "cmp.png"))
+    assert r.exit_code == 0, r.stdout
+    import imageio.v3 as iio
+    assert iio.imread(tmp_path / "cmp.png").shape[1] > 2 * iio.imread(tmp_path / "h.png").shape[1] * 0.9
+
+
+def test_heatmap_refuses_mixed_layouts(logs_dir, tmp_path):
+    r = _inv(logs_dir, "heatmap", "p2e-doorkey6x6-s0", "--backend", "mpl", "--out", str(tmp_path / "h.png"))
+    # the synthetic run has one layout hash, so it succeeds; --layout with a bogus hash must fail clearly
+    assert r.exit_code == 0
+    r = _inv(logs_dir, "heatmap", "p2e-doorkey6x6-s0", "--layout", "zzzzzz", "--backend", "mpl", "--out", str(tmp_path / "h.png"))
+    assert r.exit_code == 1 and "no episodes" in r.stdout.lower()
+
+
+def test_heatmap_animate_needs_blender(logs_dir, tmp_path):
+    r = _inv(logs_dir, "heatmap", "p2e-doorkey6x6-s0", "--layout", "seed:1000", "--backend", "mpl", "--animate",
+             "--out", str(tmp_path / "h.mp4"))
+    assert r.exit_code == 1 and "blender" in r.stdout.lower()
