@@ -126,10 +126,13 @@ entirely if you don't have `bpy`). The `render` line above writes an mp4;
 | `wmviz timeline RUN` | The seed-`S` episode nearest each `--milestones` step, as a labelled strip; `--video` tiles the animations in sync instead |
 | `wmviz heatmap RUN` | Visit counts accumulated over the selected episodes of one layout; `--animate` fills the floor in episode by episode (mp4), `--compare RUN2` puts a second run side by side |
 
-`render`, `figure`, `timeline` and `heatmap` all target one or more
-episodes via `TARGET`/`RUN` plus the filters and selectors below.
-Episode references look like `<run>/ep000123`; `<run>/123` is accepted
-too.
+`render` and `figure` take a `TARGET`: either `<run>/ep000123` directly, or
+a run name plus the filters and one selector below. `timeline` and
+`heatmap` instead take a `RUN` and pick episodes themselves — by
+milestone/seed or by layout, see their rows above — so the filters and
+selectors below don't apply to them (`heatmap` takes its own `--phase`/
+`--actor`). Episode references look like `<run>/ep000123`; `<run>/123` is
+accepted too.
 
 **Filters** (shared by `list`, `pick`, `render`, `figure`):
 
