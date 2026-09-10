@@ -1,4 +1,4 @@
-"""wmviz — list, pick, preview (and later render) recorded wm episodes."""
+"""wmviz — list, pick, preview and render recorded wm episodes."""
 from __future__ import annotations
 
 import json
@@ -172,6 +172,110 @@ def resolve_episode(logs: Path, ref: str) -> tuple[Index, IndexRow, Episode]:
     idx = Index.load(logs / run)
     row = idx.by_id(ep_id)
     return idx, row, Episode.load(idx.path_of(row))
+
+
+_SELECTOR_NAMES = ("best-return", "most-cells", "first-success", "first-door", "first-key", "at-step", "latest")
+
+_BEST = typer.Option(False, "--best-return")
+_MOST = typer.Option(False, "--most-cells")
+_FSUCC = typer.Option(False, "--first-success")
+_FDOOR = typer.Option(False, "--first-door")
+_FKEY = typer.Option(False, "--first-key")
+_AT = typer.Option(None, "--at-step")
+_LATEST = typer.Option(False, "--latest")
+
+
+def _target(target: str, filters: Filters, best_return, most_cells, first_success, first_door, first_key,
+            at_step, latest) -> tuple[Index, IndexRow, Episode]:
+    """`<run>/ep000123` → that episode; `<run>` + exactly one selector → picked episode."""
+    chosen = [n for n, on in zip(_SELECTOR_NAMES, (best_return, most_cells, first_success, first_door, first_key,
+                                                    at_step is not None, latest)) if on]
+    if "/" in target:
+        if chosen:
+            _fail("give either <run>/ep000123 or <run> plus one selector, not both", 2)
+        try:
+            return resolve_episode(state.logs, target)
+        except (ValueError, FileNotFoundError, KeyError) as e:
+            _fail(e.args[0] if isinstance(e, KeyError) and e.args else str(e))
+    if len(chosen) != 1:
+        _fail("TARGET is a run name: give exactly one selector (--best-return, --most-cells, --first-success, "
+              "--first-door, --first-key, --at-step N, --latest) or pass <run>/ep000123", 2)
+    idx = _index(target)
+    try:
+        rows = apply_filters(idx.rows, filters)
+        row = pick_row(rows, chosen[0], at_step=at_step)
+    except ValueError as e:
+        _fail(str(e), 2)
+    except NoMatch as e:
+        _fail(str(e) + _no_match_hint(idx, rows))
+    return idx, row, Episode.load(idx.path_of(row))
+
+
+def _parse_res(s: str) -> tuple[int, int]:
+    try:
+        w, h = s.lower().split("x")
+        return int(w), int(h)
+    except ValueError:
+        _fail(f"--res must look like 1920x1080, got {s!r}", 2)
+
+
+def _default_out(idx: Index, row: IndexRow, suffix: str) -> Path:
+    return Path("renders") / idx.run_name / f"ep{row.episode_id:06d}{suffix}"
+
+
+def _render_config(idx, row, out, engine, samples, res, fps, frames_per_step, discrete, preview, camera,
+                   trail, heatmap, hud, still, save_blend, no_render, assets, dream_layout):
+    from .render import RenderConfig
+    cams = tuple(c.strip() for c in camera.split(",") if c.strip())
+    return RenderConfig(out=out or _default_out(idx, row, ".png" if still is not None else ".mp4"),
+                        engine=engine, samples=samples, res=_parse_res(res), fps=fps,
+                        frames_per_step=frames_per_step, discrete=discrete, preview=preview, cameras=cams,
+                        trail=trail, heatmap=heatmap, hud=hud, still=still, save_blend=save_blend,
+                        no_render=no_render, assets=assets, dream_layout=dream_layout)
+
+
+def _need_bpy():
+    try:
+        import bpy  # noqa: F401
+    except ImportError:
+        _fail("Blender rendering needs bpy: run `uv sync --extra blender` (Python 3.11 only)")
+
+
+@app.command()
+def render(target: str,
+           phase: Optional[str] = _PHASE, actor: Optional[str] = _ACTOR, after_step: Optional[int] = _AFTER,
+           before_step: Optional[int] = _BEFORE, success: Optional[bool] = _SUCCESS,
+           min_cells: Optional[int] = _MIN_CELLS, layout: Optional[str] = _LAYOUT,
+           best_return: bool = _BEST, most_cells: bool = _MOST, first_success: bool = _FSUCC,
+           first_door: bool = _FDOOR, first_key: bool = _FKEY, at_step: Optional[int] = _AT, latest: bool = _LATEST,
+           out: Optional[Path] = typer.Option(None, "--out", help="mp4 (or png with --still); default renders/<run>/<ep>"),
+           camera: str = typer.Option("topdown", "--camera", help="topdown,follow,fpv,orbit,iso (comma = side by side)"),
+           engine: str = typer.Option("eevee", "--engine", help="eevee | cycles"),
+           samples: int = typer.Option(64, "--samples"),
+           res: str = typer.Option("1920x1080", "--res"),
+           fps: int = typer.Option(24, "--fps"),
+           frames_per_step: int = typer.Option(6, "--frames-per-step"),
+           discrete: bool = typer.Option(False, "--discrete", help="no interpolation between steps"),
+           preview: bool = typer.Option(False, "--preview", help="960x540, 3 frames per step"),
+           trail: bool = typer.Option(False, "--trail"), heatmap: bool = typer.Option(False, "--heatmap"),
+           hud: bool = typer.Option(False, "--hud"),
+           still: Optional[int] = typer.Option(None, "--still", help="render one frame at this step"),
+           save_blend: Optional[Path] = typer.Option(None, "--save-blend"),
+           no_render: bool = typer.Option(False, "--no-render", help="stop after --save-blend (GUI path)"),
+           assets: Optional[Path] = typer.Option(None, "--assets", help="asset library .blend"),
+           dream_layout: str = typer.Option("pip", "--dream-layout", help="pip | split (dream episodes)")):
+    """Render one episode as a Blender animation (or a still) — TARGET is <run>/ep000123 or <run> + one selector."""
+    idx, row, ep = _target(target, _filters(phase, actor, after_step, before_step, success, min_cells, layout),
+                           best_return, most_cells, first_success, first_door, first_key, at_step, latest)
+    _need_bpy()
+    from .render import render_episode
+    cfg = _render_config(idx, row, out, engine, samples, res, fps, frames_per_step, discrete, preview, camera,
+                         trail, heatmap, hud, still, save_blend, no_render, assets, dream_layout)
+    try:
+        result = render_episode(ep, row, cfg)
+    except ValueError as e:
+        _fail(str(e), 2)
+    console.print(f"wrote {result}")
 
 
 @app.command()

@@ -159,3 +159,39 @@ def test_list_layout_seed_filter(logs_dir):
 def test_pick_actor_latest(logs_dir):
     r = _inv(logs_dir, "pick", "p2e-doorkey6x6-s0", "--actor", "explorer", "--latest")
     assert r.exit_code == 0 and r.stdout.strip() == "p2e-doorkey6x6-s0/ep000004"
+
+
+def test_render_target_resolution_errors(logs_dir):
+    r = _inv(logs_dir, "render", "p2e-doorkey6x6-s0", "--no-render")
+    assert r.exit_code == 2 and "selector" in r.stdout
+    r = _inv(logs_dir, "render", "p2e-doorkey6x6-s0", "--best-return", "--most-cells", "--no-render")
+    assert r.exit_code == 2
+    r = _inv(logs_dir, "render", "p2e-doorkey6x6-s0/ep000099", "--no-render")
+    assert r.exit_code == 1 and "no episode 99" in r.stdout
+
+
+def test_render_reports_missing_bpy_or_runs(logs_dir, tmp_path, monkeypatch):
+    import builtins
+    real_import = builtins.__import__
+
+    def fake_import(name, *a, **k):
+        if name == "bpy" or name.startswith("wmviz.render") or name.startswith("wmviz.scene"):
+            raise ImportError("No module named 'bpy'")
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    r = _inv(logs_dir, "render", "p2e-doorkey6x6-s0/ep000001", "--out", str(tmp_path / "x.mp4"))
+    assert r.exit_code == 1 and "uv sync --extra blender" in r.stdout
+
+
+def test_render_module_imports_without_bpy():
+    """`wmviz.render` (RenderConfig, hud_lines, compose_frame, write_mp4) must import on a machine
+    without Blender — `figure`'s matplotlib backend relies on it. Checked in a subprocess so the
+    blocked `bpy` doesn't leak into this process's module cache."""
+    import subprocess
+    import sys
+    code = ("import sys; sys.modules['bpy'] = None; sys.modules['mathutils'] = None; "
+            "import wmviz.cli, wmviz.render; print(wmviz.render.RenderConfig(out='x.mp4').resolution)")
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "(1920, 1080)"
