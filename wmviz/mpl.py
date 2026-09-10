@@ -16,7 +16,8 @@ DIR_VEC = {0: (1, 0), 1: (0, 1), 2: (-1, 0), 3: (0, -1)}
 def _plt():
     try:
         import matplotlib
-        matplotlib.use("Agg")
+        if matplotlib.get_backend().lower() != "agg":     # don't hijack an interactive backend (e.g. in a notebook)
+            matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         return plt
     except ImportError as e:  # pragma: no cover
@@ -104,15 +105,19 @@ def heatmap_image(layout: Layout, counts: np.ndarray, cell_px: int = 32) -> np.n
 
 
 def keyframe_steps(row: IndexRow, ep: Episode, spec: str) -> list[tuple[int, str]]:
+    """Returns `(step, caption)` pairs — the caption is final; callers pass it through untouched."""
     if spec == "auto":
         seen: dict[int, str] = {}
         for s, name in ((row.first_key_step, "key"), (row.first_door_step, "door"), (row.first_goal_step, "goal")):
             if s is not None:
                 seen[int(s)] = name    # later (more-advanced) landmarks win a step shared with an earlier one
         seen.setdefault(ep.length, "end")          # a landmark on the last step keeps its own label
-        return sorted(seen.items())
+        return [(s, f"{name} · step {s}") for s, name in sorted(seen.items())]
     try:
         steps = [int(s) for s in spec.split(",") if s.strip()]
     except ValueError:
         raise ValueError(f"--keyframes must be 'auto' or a comma list of steps, got {spec!r}") from None
-    return [(min(max(s, 0), ep.length), f"step {s}") for s in steps]
+    if not steps:
+        raise ValueError(f"--keyframes must be 'auto' or a comma list of steps, got {spec!r}")
+    clamped = [min(max(s, 0), ep.length) for s in steps]
+    return [(c, f"step {c}") for c in clamped]

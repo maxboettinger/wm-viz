@@ -325,6 +325,9 @@ def figure(target: str,
     """A still of one episode (top-down by default) with trail and heatmap; --keyframes makes a labelled strip."""
     if out is None:
         _fail("figure needs --out <path.png>", 2)
+    be = _backend(backend)
+    if be == "blender":
+        _need_bpy()
     idx, row, ep = _target(target, _filters(phase, actor, after_step, before_step, success, min_cells, layout),
                            best_return, most_cells, first_success, first_door, first_key, at_step, latest)
     from .mpl import figure_image, keyframe_steps
@@ -332,7 +335,10 @@ def figure(target: str,
         steps = keyframe_steps(row, ep, keyframes) if keyframes else [(ep.length, "")]
     except ValueError as e:
         _fail(str(e), 2)
-    if _backend(backend) == "mpl":
+    labels = [l for _, l in steps]
+    if keyframes:
+        console.print("keyframes: " + ", ".join(labels))
+    if be == "mpl":
         images = [figure_image(ep, step=s, trail=trail, heatmap=heatmap) for s, _ in steps]
     else:
         opts = _render_options(idx, row, out, engine, samples, res, 24, 6, False, preview, camera,
@@ -341,7 +347,7 @@ def figure(target: str,
         cfg = RenderConfig(**opts)
         images = [render_still(ep, row, cfg, s) for s, _ in steps]
     from .compose import strip
-    img = images[0] if len(images) == 1 and not keyframes else strip(images, [f"{l} · step {s}" if l else f"step {s}" for s, l in steps])
+    img = images[0] if len(images) == 1 and not keyframes else strip(images, labels)
     _write_image(img, out)
     console.print(f"wrote {out}")
 
