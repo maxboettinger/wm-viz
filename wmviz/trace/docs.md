@@ -8,7 +8,7 @@ The trace subpackage is the data-access layer of `wmviz`: it reads the `wm` trai
 
 ### How it fits into the larger codebase
 
-This is the foundation both [wmviz/cli.py](wmviz/cli.py) and [wmviz/preview.py](wmviz/preview.py) build on ([@/wmviz/docs.md](wmviz/docs.md)). The CLI's `runs`, `list`, `pick`, and `show` commands all start by loading an `Index` or `Episode` from here, then filter/sort/pick rows before printing or previewing. The planned Blender renderer (not yet implemented) is expected to consume `Episode`/`Layout` the same way `wmviz/preview.py` does.
+This is the foundation both [wmviz/cli.py](wmviz/cli.py) and [wmviz/preview.py](wmviz/preview.py) build on ([@/wmviz/docs.md](wmviz/docs.md)). Every CLI command starts by loading an `Index` from here, then filter/sort/pick rows before printing, previewing, or rendering; the `render`/`figure`/`timeline`/`heatmap` commands go on to load one or more full `Episode`s. The Blender scene builder ([wmviz/scene/](wmviz/scene)) and the mpl backend ([wmviz/mpl.py](wmviz/mpl.py)) both consume `Episode`/`Layout` the same way `wmviz/preview.py` does.
 
 The public surface is re-exported through [wmviz/trace/__init__.py](wmviz/trace/__init__.py): `Index`, `IndexRow`, `Episode`, `Layout`, `parse_ref`, `find_runs`, `FORMAT_VERSION`. Everything else (`selectors.py`'s contents) is imported directly from `wmviz.trace.selectors`.
 
