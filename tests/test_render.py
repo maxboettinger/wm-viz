@@ -133,8 +133,23 @@ def test_heatmap_still_and_frames(tmp_path):
     cfg = RenderConfig(out=tmp_path / "h.png", preview=True, hud=True)
     img = render_heatmap_still(lay, accumulate([e for _, e in eps], lay.width, lay.height), cfg)
     assert img.shape == (540, 960, 3)
-    frames = render_heatmap_frames(lay, eps, cfg, frames_per_episode=2)
-    assert len(frames) == 2 * len(eps) and frames[0].shape == (540, 960, 3)
+    n, frames = render_heatmap_frames(lay, eps, cfg, frames_per_episode=2)
+    imgs = list(frames)
+    assert n == 2 * len(eps) == len(imgs) and imgs[0].shape == (540, 960, 3)
+    # tiles interpolate LINEARLY between episode keys: with 6 frames per episode the cell the agent sits
+    # on (count rises from episode 0 to 1) progresses k/6 of the way at frame 1+k. Blender's default
+    # Bezier ease-in/out is symmetric — it also hits the midpoint at frame 4 — but gives 0.07/0.26
+    # instead of 0.17/0.33 at frames 2/3, so every interior frame is checked, not just the middle one.
+    n, frames = render_heatmap_frames(lay, eps, cfg, frames_per_episode=6)
+    x, y = (int(v) for v in eps[0][1].agent_pos[0])
+    tile = bpy.data.objects[f"Floor_{x}_{y}"]
+    red = []
+    for f in range(1, 8):
+        bpy.context.scene.frame_set(f)
+        red.append(tile.color[0])
+    assert red[0] != red[6]
+    progress = [(r - red[0]) / (red[6] - red[0]) for r in red]
+    assert np.allclose(progress, [k / 6 for k in range(7)], atol=0.02), progress
 
 
 def test_heatmap_frames_are_not_resumed_across_selections(tmp_path):
@@ -150,4 +165,7 @@ def test_heatmap_frames_are_not_resumed_across_selections(tmp_path):
     ia = render_heatmap_still(lay, a, cfg)
     ib = render_heatmap_still(lay, b, cfg)
     assert not np.array_equal(ia, ib)
+    png = cfg.frames_dir("heatmap_still") / "f00001.png"
+    mtime = png.stat().st_mtime_ns
     assert np.array_equal(render_heatmap_still(lay, b, cfg), ib)          # same counts → resumed, same image
+    assert png.stat().st_mtime_ns == mtime                                 # …and nothing was re-rendered

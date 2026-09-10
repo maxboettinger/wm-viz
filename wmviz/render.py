@@ -280,13 +280,17 @@ def render_heatmap_still(layout, counts: np.ndarray, cfg: RenderConfig) -> np.nd
 
 
 def render_heatmap_frames(layout, episodes: Sequence[tuple[IndexRow, Episode]], cfg: RenderConfig,
-                          frames_per_episode: int = 6) -> list[np.ndarray]:
+                          frames_per_episode: int = 6) -> tuple[int, Iterable[np.ndarray]]:
     """The floor fills in episode by episode (in `start_step` order): every episode's cumulative counts
-    are keyframed on the tiles at `1 + i * frames_per_episode` and Blender interpolates linearly in
-    between, so each episode's visits fade in over its `frames_per_episode` frames."""
+    are keyframed on the tiles at `1 + i * frames_per_episode` with LINEAR interpolation (Blender's
+    default Bezier would ease in and out), so each episode's visits fade in evenly over its
+    `frames_per_episode` frames. Renders every frame to disk eagerly (resumable), then returns
+    `(frame count, a lazy iterator reading one PNG at a time and applying the HUD)` — same contract as
+    `frames_composited`, so tiling two runs (`--compare`) never holds a whole animation in memory."""
     import bpy
     from .aggregate import visit_counts
     from .overlays import heat_color
+    from .scene.base import set_linear
     sc, cam = _heatmap_scene(layout, cfg)
     episodes = sorted(episodes, key=lambda re: (re[0].start_step, re[0].episode_id))
     W, H = layout.width, layout.height
@@ -302,15 +306,18 @@ def render_heatmap_frames(layout, episodes: Sequence[tuple[IndexRow, Episode]], 
         for cell, tile in sc.floor.items():
             tile.color = heat_color(int(counts[cell[0], cell[1]]) / peak)
             tile.keyframe_insert("color", frame=f)
+    for tile in sc.floor.values():
+        set_linear(tile)
     last = len(cum) * frames_per_episode
     bpy.context.scene.frame_end = last
     prepare_frames_root(cfg)
     paths = render_frames(cam, range(1, last + 1), cfg.frames_dir("heatmap_anim"))
-    out = []
-    for i, (row, _) in enumerate(episodes):
-        for k in range(frames_per_episode):
-            img = iio3.imread(paths[i * frames_per_episode + k])[:, :, :3]
-            if cfg.hud:
-                img = hud(img, [f"step {row.start_step}", f"{i + 1}/{len(episodes)} episodes"])
-            out.append(img)
-    return out
+    n = len(episodes)
+
+    def frames():
+        for i, (row, _) in enumerate(episodes):
+            for k in range(frames_per_episode):
+                img = iio3.imread(paths[i * frames_per_episode + k])[:, :, :3]
+                yield hud(img, [f"step {row.start_step}", f"{i + 1}/{n} episodes"]) if cfg.hud else img
+
+    return last, frames()

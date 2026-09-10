@@ -474,12 +474,13 @@ def _heatmap_rows(run: str, layout, until_step, phase, actor, force) -> tuple[In
 
 
 def _heatmap_image(idx, rows, backend: str, animate: bool, out: Path, preview, engine, samples, res, fps, assets):
-    """One heatmap image of `rows` — or, with `animate` (blender only), its list of frames."""
+    """One heatmap image of `rows` — or, with `animate` (blender only), `(frame count, lazy frames)`."""
     from .aggregate import accumulate
     eps = [(r, Episode.load(idx.path_of(r))) for r in rows]
     lay = eps[0][1].layout
     counts = accumulate([e for _, e in eps], lay.width, lay.height)
     if backend == "mpl":
+        assert not animate, "the caller rejects --animate on the mpl backend"
         from .mpl import heatmap_image
         return heatmap_image(lay, counts)
     from .render import RenderConfig, render_heatmap_frames, render_heatmap_still
@@ -503,7 +504,8 @@ def heatmap(run: str,
             engine: str = typer.Option("eevee", "--engine"), samples: int = typer.Option(64, "--samples"),
             res: str = typer.Option("1920x1080", "--res"), fps: int = typer.Option(6, "--fps"),
             assets: Optional[Path] = typer.Option(None, "--assets")):
-    """Visit counts accumulated over the selected episodes of one layout, as a Blender (or matplotlib) still."""
+    """Visit counts accumulated over the selected episodes of one layout, as a Blender (or matplotlib) still;
+    --animate fills the floor in episode by episode (mp4), --compare RUN2 puts a second run side by side."""
     be = _backend(backend)
     if animate and be == "mpl":
         _fail("--animate needs the Blender backend (uv sync --extra blender)")
@@ -518,7 +520,8 @@ def heatmap(run: str,
     if compare:
         _same_layout_or_fail([r for _, rows in selected for r in rows], force)
     from .compose import hstack, label
-    # a compared run renders into its own `<out stem>_<run>` frames cache, so the two never share PNGs
+    # a compared run renders into its own `<out stem>_<run>` frames cache, so the two never share PNGs;
+    # with --animate each call renders its run fully to disk before the next one resets the scene.
     results = [_heatmap_image(idx, rows, be, animate, out if len(runs) == 1 else out.with_stem(f"{out.stem}_{name}"),
                               preview, engine, samples, res, fps, assets)
                for name, (idx, rows) in zip(runs, selected)]
@@ -528,8 +531,8 @@ def heatmap(run: str,
 
     if animate:
         from .render import write_mp4
-        n = max(len(r) for r in results)
-        held = [_hold_last(iter(r), n) for r in results]
+        n = max(count for count, _ in results)
+        held = [_hold_last(it, n) for _, it in results]
         out = write_mp4((tiled([next(h) for h in held]) for _ in range(n)), out.with_suffix(".mp4"), fps)
     else:
         _write_image(tiled(results), out)
