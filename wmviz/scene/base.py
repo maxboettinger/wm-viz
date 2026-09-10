@@ -189,6 +189,10 @@ def make_goal_material(style: Style):
 
 
 def make_color_material(name: str, rgba: RGBA, emission: float = 0.0):
+    """Flat-colour material, idempotent by name: a repeat call returns the existing one unchanged."""
+    existing = bpy.data.materials.get(name)
+    if existing is not None:
+        return existing
     mat, tree = _new_material(name)
     bsdf = tree.nodes["Principled BSDF"]
     bsdf.inputs["Base Color"].default_value = rgba

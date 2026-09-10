@@ -30,6 +30,15 @@ def test_materials_build_without_error():
     assert any(n.bl_idname == "ShaderNodeObjectInfo" for n in floor.node_tree.nodes)
 
 
+def test_make_color_material_is_idempotent_by_name():
+    reset_scene()
+    a = make_color_material("DoorPanel-blue", (0, 0, 1, 1))
+    b = make_color_material("DoorPanel-blue", (1, 0, 0, 1), emission=2.0)
+    assert a is b and a.name == "DoorPanel-blue"
+    assert [m.name for m in bpy.data.materials] == ["DoorPanel-blue"]   # no "DoorPanel-blue.001"
+    assert tuple(a.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value) == (0, 0, 1, 1)
+
+
 def test_new_box_and_collections():
     reset_scene()
     col = new_collection("Walls")
@@ -127,6 +136,40 @@ def _first_episode(run: str) -> Episode:
     return Episode.load(idx.path_of(idx.rows[0]))
 
 
+def _world_bbox(obj):
+    bpy.context.view_layer.update()
+    pts = [obj.matrix_world @ v.co for v in obj.data.vertices]
+    return [min(p[i] for p in pts) for i in range(3)], [max(p[i] for p in pts) for i in range(3)]
+
+
+def _assert_panel_opens_into_passage(layout, cell, panel):
+    """Swing the panel open (+π/2) and check it lies on the passage side: its far end inside the
+    passage cell in front of the door, never crossing the wall's centre line, and inside the
+    door cell's extent along the wall. (The hinge is on the wall's centre line, so the near half
+    of an open panel is necessarily still over the door cell.)"""
+    axis = door_axis(layout, cell)
+    cx, cy, _ = cell_center(*cell)
+    fx, fy = front_cell(cell, 0 if axis == "y" else 3)        # passage runs across the wall
+    panel.rotation_euler.z += math.pi / 2
+    lo, hi = _world_bbox(panel)
+    panel.rotation_euler.z -= math.pi / 2
+    if axis == "y":                                             # opens into (x+1, y)
+        assert fx <= hi[0] <= fx + 1 and lo[0] >= cx - 1e-6
+        assert -(fy + 1) <= lo[1] and hi[1] <= -fy
+    else:                                                       # opens into (x, y-1)
+        assert -(fy + 1) <= hi[1] <= -fy and lo[1] >= cy - 1e-6
+        assert fx <= lo[0] and hi[0] <= fx + 1
+
+
+def _assert_linked(sc):
+    """Every built object sits in its type's collection (later stages toggle whole collections)."""
+    def names(objs):
+        return {c.name for o in objs for c in o.users_collection}
+    assert names(sc.walls) == {"Walls"} and names(sc.floor.values()) == {"Floor"}
+    assert names(f for pair in sc.doors.values() for f in pair) == {"Doors"}
+    assert names(list(sc.keys.values()) + sc.goals) == {"Items"} and names([sc.agent]) == {"Agent"}
+
+
 def test_cell_center_and_yaw():
     assert cell_center(0, 0) == (0.5, -0.5, 0.0)
     assert cell_center(3, 2, 0.25) == (3.5, -2.5, 0.25)
@@ -155,8 +198,13 @@ def test_build_scene_object_counts_doorkey():
     n_floor = lay.width * lay.height - len(lay.walls) - len(lay.doors)
     assert len(sc.floor) == n_floor and all(tuple(o.color[:3]) == (0.0, 0.0, 0.0) for o in sc.floor.values())
     assert sc.agent.name == "Agent" and sc.agent.children and sc.carried is None
+    nose, = sc.agent.children
+    bpy.context.view_layer.update()
+    assert nose.matrix_world.translation.x > sc.agent.location.x   # nose points +X at yaw 0
     assert set(sc.collections) == {"Floor", "Walls", "Doors", "Items", "Agent"}
+    _assert_linked(sc)
     assert any(o.type == "LIGHT" for o in bpy.data.objects) and bpy.context.scene.world is not None
+    assert "Lava" not in bpy.data.materials                        # created only for layouts with lava
 
 
 def test_door_panel_origin_is_hinge_and_key_has_colour():
@@ -171,6 +219,7 @@ def test_door_panel_origin_is_hinge_and_key_has_colour():
     # the panel mesh extends only to one side of its origin (so rotating swings it open)
     xs = [v.co.x for v in panel.data.vertices]
     assert min(xs) == pytest.approx(0.0) and max(xs) == pytest.approx(1.0)
+    _assert_panel_opens_into_passage(ep.layout, cell, panel)
     (kcell, key), = sc.keys.items()
     colour = ep.layout.keys[kcell]
     assert key.data.materials[0].name.startswith(f"Key-{colour}")
@@ -182,3 +231,31 @@ def test_build_scene_multiroom_has_many_doors():
     sc = build_scene(ep.layout)
     assert len(sc.doors) == len(ep.layout.doors) >= 5
     assert len(sc.walls) == len(ep.layout.walls)
+    # one panel material per door colour, not one per door
+    assert len([m for m in bpy.data.materials if m.name.startswith("DoorPanel-")]) == len({c for c in ep.layout.doors.values()})
+    for cell, (_, panel) in sc.doors.items():
+        _assert_panel_opens_into_passage(ep.layout, cell, panel)
+    _assert_linked(sc)
+
+
+def test_build_scene_places_and_links_asset_library_objects(tmp_path):
+    # library: one object per overridable type, tagged so we can tell them from procedural ones
+    reset_scene()
+    for name in ("DoorPanel", "DoorFrame", "Key", "Agent"):
+        o = new_box(name, (0, 0, 0), (0.3, 0.3, 0.3), None, bpy.context.scene.collection)
+        o["from_lib"] = 1
+    lib = save_blend(tmp_path / "lib.blend")
+    reset_scene()
+    ep = _first_episode("doorkey6x6")
+    sc = build_scene(ep.layout, assets=lib)
+    (cell, (frame, panel)), = sc.doors.items()
+    (kcell, key), = sc.keys.items()
+    assert all(o.get("from_lib") == 1 for o in (frame, panel, key, sc.agent))
+    assert not any(o.get("from_lib") for o in sc.walls)              # not in the library → procedural
+    # library objects follow the same placement conventions as procedural ones
+    cx, cy, _ = cell_center(*cell)
+    assert tuple(frame.location) == pytest.approx((cx, cy, 0.0))
+    assert abs(panel.location.x - cx) == pytest.approx(0.4, abs=0.11) or abs(panel.location.y - cy) == pytest.approx(0.4, abs=0.11)
+    assert abs(panel.rotation_euler.z) in (0.0, pytest.approx(math.pi / 2))
+    assert tuple(key.location) == pytest.approx(cell_center(*kcell))   # library key stands on its origin
+    _assert_linked(sc)
