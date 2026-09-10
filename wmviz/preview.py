@@ -4,12 +4,8 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
-import numpy as np
-
+from .mpl import COLOR_RGB, draw_layout, draw_trail, new_axes  # noqa: F401  (COLOR_RGB re-exported)
 from .trace.reader import Episode
-
-COLOR_RGB = {"red": (0.85, 0.2, 0.2), "green": (0.2, 0.7, 0.3), "blue": (0.25, 0.4, 0.9),
-             "purple": (0.6, 0.3, 0.8), "yellow": (0.95, 0.8, 0.2), "grey": (0.5, 0.5, 0.5)}
 
 
 def ascii_map(ep: Episode) -> str:
@@ -45,37 +41,14 @@ def ascii_map(ep: Episode) -> str:
 
 
 def save_png(ep: Episode, out: Path | str, cell_px: int = 32) -> Path:
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        from matplotlib.collections import LineCollection
-    except ImportError as e:  # pragma: no cover
-        raise RuntimeError("matplotlib is required for PNG previews: uv sync --extra figures") from e
-    lay = ep.layout
-    W, H = lay.width, lay.height
-    fig, ax = plt.subplots(figsize=(W * cell_px / 100, H * cell_px / 100), dpi=100)
-    ax.set_xlim(0, W); ax.set_ylim(H, 0); ax.set_aspect("equal"); ax.axis("off")
-    for (x, y) in lay.walls:
-        ax.add_patch(plt.Rectangle((x, y), 1, 1, color=(0.35, 0.35, 0.35)))
-    for (x, y), col in lay.doors.items():
-        ax.add_patch(plt.Rectangle((x, y), 1, 1, color=COLOR_RGB[col]))
-    for (x, y), col in lay.keys.items():
-        ax.plot(x + 0.5, y + 0.5, marker="P", ms=cell_px * 0.35, color=COLOR_RGB[col], mec="k")
-    for (x, y) in lay.goals:
-        ax.add_patch(plt.Rectangle((x, y), 1, 1, color=(0.3, 0.85, 0.4)))
-    for (x, y) in lay.lava:
-        ax.add_patch(plt.Rectangle((x, y), 1, 1, color=(0.95, 0.4, 0.1)))
+    fig, ax = new_axes(ep.layout, cell_px)
+    draw_layout(ax, ep.layout)
+    draw_trail(ax, ep.agent_pos, lw=cell_px * 0.12)
     pts = ep.agent_pos.astype(float) + 0.5
-    if len(pts) > 1:
-        segs = np.stack([pts[:-1], pts[1:]], axis=1)
-        lc = LineCollection(segs, cmap="viridis", linewidths=cell_px * 0.12)
-        lc.set_array(np.linspace(0, 1, len(segs)))
-        ax.add_collection(lc)
-    ax.plot(*pts[0], "o", color="white", mec="k", ms=cell_px * 0.3)
     ax.plot(*pts[-1], "s", color="black", mec="w", ms=cell_px * 0.3)
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, bbox_inches="tight", pad_inches=0.05)
+    import matplotlib.pyplot as plt
     plt.close(fig)
     return out

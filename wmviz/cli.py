@@ -286,6 +286,66 @@ def render(target: str,
     console.print(f"wrote {result}")
 
 
+def _backend(name: str | None) -> str:
+    if name in ("blender", "mpl"):
+        return name
+    if name is not None:
+        _fail("--backend must be blender or mpl", 2)
+    try:
+        import bpy  # noqa: F401
+        return "blender"
+    except ImportError:
+        console.print("[dim]bpy not available — using --backend mpl[/dim]")
+        return "mpl"
+
+
+def _write_image(img, out: Path) -> None:
+    import imageio.v3 as iio
+    out.parent.mkdir(parents=True, exist_ok=True)
+    iio.imwrite(out, img)
+
+
+@app.command()
+def figure(target: str,
+           phase: Optional[str] = _PHASE, actor: Optional[str] = _ACTOR, after_step: Optional[int] = _AFTER,
+           before_step: Optional[int] = _BEFORE, success: Optional[bool] = _SUCCESS,
+           min_cells: Optional[int] = _MIN_CELLS, layout: Optional[str] = _LAYOUT,
+           best_return: bool = _BEST, most_cells: bool = _MOST, first_success: bool = _FSUCC,
+           first_door: bool = _FDOOR, first_key: bool = _FKEY, at_step: Optional[int] = _AT, latest: bool = _LATEST,
+           out: Optional[Path] = typer.Option(None, "--out", help="PNG path (required)"),
+           backend: Optional[str] = typer.Option(None, "--backend", help="blender | mpl (default: blender if bpy imports)"),
+           camera: str = typer.Option("topdown", "--camera", help="topdown | iso (blender backend)"),
+           keyframes: Optional[str] = typer.Option(None, "--keyframes", help="auto | 3,57,120 → labelled strip"),
+           trail: bool = typer.Option(True, "--trail/--no-trail"),
+           heatmap: bool = typer.Option(True, "--heatmap/--no-heatmap"),
+           preview: bool = typer.Option(False, "--preview"),
+           engine: str = typer.Option("eevee", "--engine"), samples: int = typer.Option(64, "--samples"),
+           res: str = typer.Option("1920x1080", "--res"),
+           assets: Optional[Path] = typer.Option(None, "--assets")):
+    """A still of one episode (top-down by default) with trail and heatmap; --keyframes makes a labelled strip."""
+    if out is None:
+        _fail("figure needs --out <path.png>", 2)
+    idx, row, ep = _target(target, _filters(phase, actor, after_step, before_step, success, min_cells, layout),
+                           best_return, most_cells, first_success, first_door, first_key, at_step, latest)
+    from .mpl import figure_image, keyframe_steps
+    try:
+        steps = keyframe_steps(row, ep, keyframes) if keyframes else [(ep.length, "")]
+    except ValueError as e:
+        _fail(str(e), 2)
+    if _backend(backend) == "mpl":
+        images = [figure_image(ep, step=s, trail=trail, heatmap=heatmap) for s, _ in steps]
+    else:
+        opts = _render_options(idx, row, out, engine, samples, res, 24, 6, False, preview, camera,
+                               trail, heatmap, False, None, None, False, assets, "pip")
+        from .render import RenderConfig, render_still
+        cfg = RenderConfig(**opts)
+        images = [render_still(ep, row, cfg, s) for s, _ in steps]
+    from .compose import strip
+    img = images[0] if len(images) == 1 and not keyframes else strip(images, [f"{l} · step {s}" if l else f"step {s}" for s, l in steps])
+    _write_image(img, out)
+    console.print(f"wrote {out}")
+
+
 @app.command()
 def show(ref: str, png: Optional[Path] = typer.Option(None, "--png", help="also write a PNG preview")):
     """Stats and an ASCII top-down map of one episode (<run>/ep000123)."""
