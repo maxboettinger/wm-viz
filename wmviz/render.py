@@ -94,12 +94,17 @@ def build(ep: Episode, cfg: RenderConfig):
     """Reset Blender, build and animate the scene, add every camera. Returns (scene objects, cameras, last frame)."""
     from .animate import animate
     from .cameras import add_camera
+    from .overlays import add_heatmap, add_trail
     from .scene.base import configure_render, reset_scene
     from .scene.minigrid import build_scene
 
     reset_scene()
     sc = build_scene(ep.layout, assets=cfg.assets)
     last = animate(sc, ep, cfg.anim)
+    if cfg.trail:
+        add_trail(sc, ep, cfg.anim)
+    if cfg.heatmap:
+        add_heatmap(sc, ep, cfg.anim)
     cams = {name: add_camera(name, ep.layout, ep, cfg.anim) for name in cfg.cameras}
     configure_render(cfg.engine, cfg.samples, cfg.resolution, cfg.fps)
     return sc, cams, last
