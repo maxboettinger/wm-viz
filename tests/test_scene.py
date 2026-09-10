@@ -1,4 +1,6 @@
 """wmviz/scene — Blender scene primitives (needs bpy; skipped otherwise)."""
+import math
+
 import pytest
 
 bpy = pytest.importorskip("bpy")
@@ -107,3 +109,76 @@ def test_asset_or_falls_back_and_loads_from_library(tmp_path):
     assert b.name in bpy.context.scene.objects
     c = asset_or(lib, "Missing", lambda: new_box("Missing", (0, 0, 0), (1, 1, 1), None, bpy.context.scene.collection))
     assert c.dimensions.x == pytest.approx(1.0)
+
+
+# ── MiniGrid scene builder ────────────────────────────────────────────────────
+
+from pathlib import Path  # noqa: E402
+
+from wmviz.scene.minigrid import (SceneObjects, YAW, build_scene, cell_center, door_axis,  # noqa: E402
+                                  front_cell)
+from wmviz.trace import Episode, Index  # noqa: E402
+
+FIX = Path(__file__).parent / "fixtures"
+
+
+def _first_episode(run: str) -> Episode:
+    idx = Index.load(FIX / run)
+    return Episode.load(idx.path_of(idx.rows[0]))
+
+
+def test_cell_center_and_yaw():
+    assert cell_center(0, 0) == (0.5, -0.5, 0.0)
+    assert cell_center(3, 2, 0.25) == (3.5, -2.5, 0.25)
+    assert YAW[0] == 0 and YAW[1] == pytest.approx(-math.pi / 2) and YAW[3] == pytest.approx(math.pi / 2)
+    assert front_cell((2, 3), 0) == (3, 3) and front_cell((2, 3), 1) == (2, 4) and front_cell((2, 3), 3) == (2, 2)
+
+
+def test_door_axis_on_doorkey_fixture():
+    ep = _first_episode("doorkey6x6")
+    (cell, _), = ep.layout.doors.items()
+    x, y = cell
+    lay = ep.layout
+    expected = "x" if ((x - 1, y) in lay.walls or (x + 1, y) in lay.walls) else "y"
+    assert door_axis(lay, cell) == expected
+
+
+def test_build_scene_object_counts_doorkey():
+    reset_scene()
+    ep = _first_episode("doorkey6x6")
+    sc = build_scene(ep.layout)
+    lay = ep.layout
+    assert isinstance(sc, SceneObjects)
+    assert len(sc.walls) == len(lay.walls)
+    assert set(sc.doors) == set(lay.doors) and set(sc.keys) == set(lay.keys)
+    assert len(sc.goals) == len(lay.goals) == 1
+    n_floor = lay.width * lay.height - len(lay.walls) - len(lay.doors)
+    assert len(sc.floor) == n_floor and all(tuple(o.color[:3]) == (0.0, 0.0, 0.0) for o in sc.floor.values())
+    assert sc.agent.name == "Agent" and sc.agent.children and sc.carried is None
+    assert set(sc.collections) == {"Floor", "Walls", "Doors", "Items", "Agent"}
+    assert any(o.type == "LIGHT" for o in bpy.data.objects) and bpy.context.scene.world is not None
+
+
+def test_door_panel_origin_is_hinge_and_key_has_colour():
+    reset_scene()
+    ep = _first_episode("doorkey6x6")
+    sc = build_scene(ep.layout)
+    (cell, (frame, panel)), = sc.doors.items()
+    cx, cy, _ = cell_center(*cell)
+    # hinge sits on the cell edge, not the cell centre
+    assert abs(panel.location.x - cx) == pytest.approx(0.4, abs=0.11) or abs(panel.location.y - cy) == pytest.approx(0.4, abs=0.11)
+    assert abs(panel.rotation_euler.z) in (0.0, pytest.approx(math.pi / 2))   # ±π/2: closed yaw follows YAW[1]
+    # the panel mesh extends only to one side of its origin (so rotating swings it open)
+    xs = [v.co.x for v in panel.data.vertices]
+    assert min(xs) == pytest.approx(0.0) and max(xs) == pytest.approx(1.0)
+    (kcell, key), = sc.keys.items()
+    colour = ep.layout.keys[kcell]
+    assert key.data.materials[0].name.startswith(f"Key-{colour}")
+
+
+def test_build_scene_multiroom_has_many_doors():
+    reset_scene()
+    ep = _first_episode("multiroom-n4s5")
+    sc = build_scene(ep.layout)
+    assert len(sc.doors) == len(ep.layout.doors) >= 5
+    assert len(sc.walls) == len(ep.layout.walls)
