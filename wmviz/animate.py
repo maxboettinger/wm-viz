@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Sequence
 
 import bpy
+from mathutils import Matrix
 
 from .scene.base import keyframe_hidden, link_only, set_interpolation
 from .scene.minigrid import AGENT_Z, YAW, SceneObjects, cell_center, front_cell
@@ -76,8 +77,8 @@ def _nearest_key(sc: SceneObjects, cell: tuple[int, int], on_floor: set):
     return min(cands, key=lambda c: abs(c[0] - cell[0]) + abs(c[1] - cell[1]))
 
 
-def _make_carried(sc: SceneObjects):
-    src = next(iter(sc.keys.values()))
+def _make_carried(sc: SceneObjects, cell: tuple[int, int]):
+    src = sc.keys[cell]
     copy = src.copy()
     copy.animation_data_clear()      # Object.copy() shares the action+slot: our keys would overwrite the floor key's
     copy.data = src.data
@@ -85,13 +86,14 @@ def _make_carried(sc: SceneObjects):
     link_only(copy, sc.collections["Agent"])
     for child in src.children:
         cc = child.copy()
+        cc.animation_data_clear()
         cc.data = child.data
         link_only(cc, sc.collections["Agent"])
         cc.parent = copy
         cc.matrix_parent_inverse = child.matrix_parent_inverse.copy()
     copy.parent = sc.agent
-    copy.matrix_parent_inverse = sc.agent.matrix_world.inverted()
-    copy.location = (0.0, 0.0, 0.55)
+    copy.matrix_parent_inverse = Matrix.Diagonal(sc.agent.scale.to_4d()).inverted()   # cancel the agent's scale from the property, not the evaluated matrix
+    copy.location = (0.0, 0.0, 0.3)
     copy.scale = (0.6, 0.6, 0.6)
     return copy
 
@@ -116,7 +118,7 @@ def _animate_keys(sc: SceneObjects, ep: Episode, cfg: AnimConfig) -> None:
             keyframe_hidden(sc.keys[cell], f - 1, hidden=False)
             keyframe_hidden(sc.keys[cell], f, hidden=True)
             if carried is None:
-                carried = _make_carried(sc)
+                carried = _make_carried(sc, cell)
                 sc.carried = carried
                 keyframe_hidden(carried, step_frame(0, cfg), hidden=True)
             keyframe_hidden(carried, f - 1, hidden=True)

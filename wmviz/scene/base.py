@@ -78,11 +78,13 @@ def set_linear(obj) -> None:
 
 
 def keyframe_hidden(obj, frame: int, hidden: bool) -> None:
-    """Keyframe render+viewport visibility at `frame` (booleans hold until the next key)."""
-    obj.hide_render = hidden
-    obj.hide_viewport = hidden
-    obj.keyframe_insert("hide_render", frame=frame)
-    obj.keyframe_insert("hide_viewport", frame=frame)
+    """Keyframe render+viewport visibility of `obj` and all its descendants at `frame`
+    (booleans hold until the next key; Blender does not propagate hide_* through parenting)."""
+    for o in (obj, *obj.children_recursive):
+        o.hide_render = hidden
+        o.hide_viewport = hidden
+        o.keyframe_insert("hide_render", frame=frame)
+        o.keyframe_insert("hide_viewport", frame=frame)
 
 
 def new_collection(name: str) -> bpy.types.Collection:

@@ -88,12 +88,15 @@ def test_key_pickup_hides_floor_key_and_shows_carried_copy():
     sc = build_scene(ep.layout)
     animate(sc, ep, cfg)
     t_pick = int(np.flatnonzero(ep.carrying != -1)[0])
-    (key,), = [list(sc.keys.values())]
+    (key,) = sc.keys.values()
     assert sc.carried is not None and sc.carried.parent is sc.agent
     bpy.context.scene.frame_set(step_frame(t_pick, cfg) - 1)
     assert not key.hide_render and sc.carried.hide_render
     bpy.context.scene.frame_set(step_frame(t_pick, cfg))
-    assert key.hide_render and not sc.carried.hide_render
+    assert all(o.hide_render for o in (key, *key.children_recursive))            # the bow goes with the shaft
+    assert not any(o.hide_render for o in (sc.carried, *sc.carried.children_recursive))
+    ax, ay, az = sc.agent.location
+    assert tuple(sc.carried.matrix_world.translation) == pytest.approx((ax, ay, az + 0.3), abs=1e-3)
 
 
 def test_floor_key_stays_home_until_the_first_drop():

@@ -77,15 +77,17 @@ def test_fcurves_and_interpolation():
     assert o.location.x == pytest.approx(1.0)          # linear: halfway between frames 1 and 7
 
 
-def test_keyframe_hidden_holds_until_next_key():
+def test_keyframe_hidden_holds_until_next_key_and_covers_children():
     reset_scene()
     o = new_box("h", (0, 0, 0), (1, 1, 1), None, bpy.context.scene.collection)
+    child = new_box("hc", (0, 0, 1), (1, 1, 1), None, bpy.context.scene.collection)
+    child.parent = o                     # Blender does not propagate hide_* through parenting
     keyframe_hidden(o, 1, True)
     keyframe_hidden(o, 5, False)
     bpy.context.scene.frame_set(3)
-    assert o.hide_render is True and o.hide_viewport is True
+    assert all(x.hide_render is True and x.hide_viewport is True for x in (o, child))
     bpy.context.scene.frame_set(5)
-    assert o.hide_render is False and o.hide_viewport is False
+    assert all(x.hide_render is False and x.hide_viewport is False for x in (o, child))
 
 
 def test_lighting_render_config_and_save(tmp_path):
