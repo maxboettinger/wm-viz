@@ -17,9 +17,10 @@ terminal, as a PNG, or as a rendered Blender animation.
 — rendered against `tests/fixtures`, 960×540, no camera tricks.*
 
 Rendering is implemented: `wmviz render` produces Blender animations and
-stills, `figure`/`timeline`/`heatmap` build static and animated figures on
-top of it, and everything also runs through a matplotlib fallback that
-needs no Blender.
+stills, and `figure`/`timeline`/`heatmap` build static and animated
+figures on top of it. `figure`, `timeline` and `heatmap` stills also run
+through a matplotlib fallback that needs no Blender (`render` itself, and
+`timeline --video`/`heatmap --animate`, need `bpy`).
 
 ## Installation
 
@@ -123,8 +124,8 @@ entirely if you don't have `bpy`). The `render` line above writes an mp4;
 | `wmviz show REF` | Prints an episode's stats and an ASCII top-down map; `--png PATH` also writes a matplotlib preview |
 | `wmviz render TARGET` | Renders one episode as a Blender mp4, or a `--still N` PNG. `--camera` defaults to `topdown` (`fpv` for dream episodes); `--trail`, `--heatmap`, `--hud` add overlays |
 | `wmviz figure TARGET` | One still of an episode (top-down, trail + heatmap on by default); `--keyframes auto\|3,57,120` composes a labelled strip instead of a single image |
-| `wmviz timeline RUN` | The seed-`S` episode nearest each `--milestones` step, as a labelled strip; `--video` tiles the animations in sync instead |
-| `wmviz heatmap RUN` | Visit counts accumulated over the selected episodes of one layout; `--animate` fills the floor in episode by episode (mp4), `--compare RUN2` puts a second run side by side |
+| `wmviz timeline RUN` | The seed-`S` episode of `--phase` (default `coverage_eval`) nearest each `--milestones` step, as a labelled strip; `--video` tiles the animations in sync instead |
+| `wmviz heatmap RUN` | Visit counts accumulated over the selected episodes of one layout (`--phase`, `--actor`, `--until-step N` for "episodes that ended by step N" narrow the selection); `--animate` fills the floor in episode by episode (mp4, each episode's visits blending in linearly over 6 frames), `--compare RUN2` puts a second run side by side |
 
 `render` and `figure` take a `TARGET`: either `<run>/ep000123` directly, or
 a run name plus the filters and one selector below. `timeline` and
@@ -133,6 +134,12 @@ milestone/seed or by layout, see their rows above — so the filters and
 selectors below don't apply to them (`heatmap` takes its own `--phase`/
 `--actor`). Episode references look like `<run>/ep000123`; `<run>/123` is
 accepted too.
+
+`timeline` and `heatmap` both aggregate several episodes onto one layout;
+if the selected episodes don't all share a `layout_hash` (mixing training
+episodes, which reset to a random layout each time, is the usual cause),
+both refuse with a hint listing the layouts involved — pass `--force` to
+aggregate across layouts anyway.
 
 **Filters** (shared by `list`, `pick`, `render`, `figure`):
 
@@ -179,7 +186,7 @@ target — exactly one):
 | Option | Meaning |
 |---|---|
 | `--engine eevee\|cycles` | default `eevee` |
-| `--samples N` | render samples, default 64 (Cycles only matters much) |
+| `--samples N` | Cycles samples, or Eevee TAA samples; default 64 |
 | `--res WxH` | default `1920x1080`, must be even in both dimensions (libx264) |
 | `--fps N` | output frame rate, default 24 |
 | `--frames-per-step N` | Blender frames per env step, default 6 |
@@ -256,6 +263,11 @@ Either way, a **white** border/divider means the model is still tracking
 (posterior reconstruction); it turns **black** once the model starts
 dreaming (open-loop imagination) at `dream_start`. `--still N` renders one
 labelled panel, handy for a paper figure.
+
+The `pip` layout needs an output at least 118 px high to fit its insets;
+both `--preview` (540 px) and the default 1080p easily qualify, but a
+smaller `--res` fails with a clear error (`pip: inset block WxH … does not
+fit in base WxH`) rather than a corrupted image.
 
 ```bash
 wmviz render dream-doorkey6x6/ep000002 --preview --still 10 --hud --out dream.png
@@ -351,11 +363,12 @@ tests/                    unit tests + contract tests against real wm traces
 tests/fixtures/           three real, trimmed runs, one of them dream episodes (see tests/fixtures/README.md)
 ```
 
-Modules under `wmviz/scene/` plus `animate.py`, `cameras.py`, `overlays.py`
-and `render.py` import `bpy`; everything else (`trace/`, `preview.py`,
-`compose.py`, `aggregate.py`, `mpl.py`) does not, so listing, filtering and
-matplotlib previews work without Blender installed. `bpy` is imported
-lazily inside functions, never at module import time.
+Modules under `wmviz/scene/` plus `animate.py`, `cameras.py` and
+`overlays.py` import `bpy` at module scope — they *are* the Blender layer.
+`cli.py` and `render.py` import those modules lazily, inside functions,
+never at their own module scope, so `import wmviz`/`wmviz.cli` and every
+command except `render` (and `timeline --video`/`heatmap --animate`) work
+without Blender installed.
 
 ## Development
 
