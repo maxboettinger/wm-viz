@@ -281,12 +281,14 @@ def render_heatmap_still(layout, counts: np.ndarray, cfg: RenderConfig) -> np.nd
 
 def render_heatmap_frames(layout, episodes: Sequence[tuple[IndexRow, Episode]], cfg: RenderConfig,
                           frames_per_episode: int = 6) -> tuple[int, Iterable[np.ndarray]]:
-    """The floor fills in episode by episode (in `start_step` order): every episode's cumulative counts
-    are keyframed on the tiles at `1 + i * frames_per_episode` with LINEAR interpolation (Blender's
-    default Bezier would ease in and out), so each episode's visits fade in evenly over its
-    `frames_per_episode` frames. Renders every frame to disk eagerly (resumable), then returns
-    `(frame count, a lazy iterator reading one PNG at a time and applying the HUD)` — same contract as
-    `frames_composited`, so tiling two runs (`--compare`) never holds a whole animation in memory."""
+    """The floor fills in episode by episode (in `start_step` order): every tile is keyed black at frame 1
+    and episode i's cumulative counts at `1 + (i + 1) * frames_per_episode`, with LINEAR interpolation
+    (Blender's default Bezier would ease in and out). Frames `2 .. 1 + n * frames_per_episode` are
+    rendered, so block i (frames `2 + i * fpe .. 1 + (i + 1) * fpe`) shows episode i's visits fading in
+    evenly and ends with them fully painted; the HUD of frame f names episode `(f - 2) // fpe`. Renders
+    every frame to disk eagerly (resumable), then returns `(frame count, a lazy iterator reading one PNG
+    at a time and applying the HUD)` — same contract as `frames_composited`, so tiling two runs
+    (`--compare`) never holds a whole animation in memory."""
     import bpy
     from .aggregate import visit_counts
     from .overlays import heat_color
@@ -299,25 +301,30 @@ def render_heatmap_frames(layout, episodes: Sequence[tuple[IndexRow, Episode]], 
     for _, ep in episodes:
         total = total + visit_counts(ep.agent_pos, W, H)
         cum.append(total.copy())
-    cfg = _keyed(cfg, np.stack(cum), frames_per_episode=int(frames_per_episode))
+    # `first_frame` is part of the fingerprint: frames rendered by the old keying (episode i complete
+    # at 1 + i * fpe) share file names with these and must not be resumed.
+    cfg = _keyed(cfg, np.stack(cum), frames_per_episode=int(frames_per_episode), first_frame=2)
     peak = max(int(cum[-1].max()), 1)
+    for tile in sc.floor.values():
+        tile.color = heat_color(0.0)
+        tile.keyframe_insert("color", frame=1)
     for i, counts in enumerate(cum):
-        f = 1 + i * frames_per_episode
+        f = 1 + (i + 1) * frames_per_episode
         for cell, tile in sc.floor.items():
             tile.color = heat_color(int(counts[cell[0], cell[1]]) / peak)
             tile.keyframe_insert("color", frame=f)
     for tile in sc.floor.values():
         set_linear(tile)
-    last = len(cum) * frames_per_episode
+    n = len(episodes)
+    last = 1 + n * frames_per_episode
     bpy.context.scene.frame_end = last
     prepare_frames_root(cfg)
-    paths = render_frames(cam, range(1, last + 1), cfg.frames_dir("heatmap_anim"))
-    n = len(episodes)
+    paths = render_frames(cam, range(2, last + 1), cfg.frames_dir("heatmap_anim"))
 
     def frames():
-        for i, (row, _) in enumerate(episodes):
-            for k in range(frames_per_episode):
-                img = iio3.imread(paths[i * frames_per_episode + k])[:, :, :3]
-                yield hud(img, [f"step {row.start_step}", f"{i + 1}/{n} episodes"]) if cfg.hud else img
+        for k, path in enumerate(paths):                  # frame 2 + k belongs to episode k // fpe
+            row = episodes[k // frames_per_episode][0]
+            img = iio3.imread(path)[:, :, :3]
+            yield hud(img, [f"step {row.start_step}", f"{k // frames_per_episode + 1}/{n} episodes"]) if cfg.hud else img
 
-    return last, frames()
+    return n * frames_per_episode, frames()

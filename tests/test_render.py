@@ -136,18 +136,21 @@ def test_heatmap_still_and_frames(tmp_path):
     n, frames = render_heatmap_frames(lay, eps, cfg, frames_per_episode=2)
     imgs = list(frames)
     assert n == 2 * len(eps) == len(imgs) and imgs[0].shape == (540, 960, 3)
-    # tiles interpolate LINEARLY between episode keys: with 6 frames per episode the cell the agent sits
-    # on (count rises from episode 0 to 1) progresses k/6 of the way at frame 1+k. Blender's default
-    # Bezier ease-in/out is symmetric — it also hits the midpoint at frame 4 — but gives 0.07/0.26
-    # instead of 0.17/0.33 at frames 2/3, so every interior frame is checked, not just the middle one.
+    # every tile is keyed black at frame 1 and episode 0's counts at frame 7 (6 frames per episode), with
+    # LINEAR interpolation: the cell the agent sits on progresses k/6 of the way at frame 1+k, so rendered
+    # block 0 (frames 2..7) shows episode 0 fading in and ends fully painted — not pre-painted at frame 1.
+    # Blender's default Bezier ease-in/out is symmetric — it also hits the midpoint at frame 4 — but gives
+    # 0.07/0.26 instead of 0.17/0.33 at frames 2/3, so every interior frame is checked, not just the middle.
     n, frames = render_heatmap_frames(lay, eps, cfg, frames_per_episode=6)
+    assert n == 6 * len(eps)
     x, y = (int(v) for v in eps[0][1].agent_pos[0])
     tile = bpy.data.objects[f"Floor_{x}_{y}"]
     red = []
     for f in range(1, 8):
         bpy.context.scene.frame_set(f)
         red.append(tile.color[0])
-    assert red[0] != red[6]
+    assert red[0] == pytest.approx(0.0, abs=1e-6)                    # frame 1: black, nothing painted yet
+    assert red[6] > 0.5                                              # frame 7: episode 0 fully painted
     progress = [(r - red[0]) / (red[6] - red[0]) for r in red]
     assert np.allclose(progress, [k / 6 for k in range(7)], atol=0.02), progress
 
