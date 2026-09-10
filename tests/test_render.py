@@ -9,7 +9,8 @@ import pytest
 bpy = pytest.importorskip("bpy")
 pytestmark = pytest.mark.slow
 
-from wmviz.render import RenderConfig, build, render_episode, render_frames, render_still, write_mp4  # noqa: E402
+from wmviz.render import (RenderConfig, build, frames_composited,  # noqa: E402
+                          render_episode, render_frames, render_still, write_mp4)
 from wmviz.trace import Episode, Index  # noqa: E402
 
 FIX = Path(__file__).parent / "fixtures"
@@ -66,6 +67,24 @@ def test_short_animation_resumes_and_writes_mp4(tmp_path):
     assert [p.stat().st_mtime_ns for p in paths] == mtimes             # resumed: nothing re-rendered
     out = write_mp4((np.zeros((90, 160, 3), np.uint8) for _ in range(6)), tmp_path / "z.mp4", fps=12)
     assert out.exists() and out.stat().st_size > 0
+
+
+def test_frames_composited_returns_count_and_lazy_frames(tmp_path):
+    """`frames_composited` renders eagerly (same resumable disk cache as `_composited`) but hands back
+    the frame count up front plus a generator, so a caller never has to materialize the whole animation
+    into memory just to know how many frames it has — mirrors the short-animation smoke test's tiny
+    settings (2 frames per step) but over a synthetic 3-step episode instead of a truncated real one."""
+    from conftest import TraceBuilder
+    b = TraceBuilder(tmp_path / "logs" / "run")
+    b.add(T=3)
+    idx = Index.load(tmp_path / "logs" / "run")
+    row = idx.rows[0]
+    ep = Episode.load(idx.path_of(row))
+    cfg = RenderConfig(out=tmp_path / "ep.mp4", res=(160, 90), frames_per_step=2, samples=4)
+    n, frames = frames_composited(ep, row, cfg)
+    assert n == 7
+    imgs = list(frames)
+    assert len(imgs) == 7 and all(img.shape == (90, 160, 3) for img in imgs)
 
 
 def test_resume_wipes_frames_of_a_different_config(tmp_path):

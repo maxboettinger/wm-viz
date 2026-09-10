@@ -59,6 +59,20 @@ def test_timeline_mpl_strip(logs_dir, tmp_path):
     assert r.exit_code == 0, r.stdout
     assert (tmp_path / "t.png").exists() and "step 100" in r.stdout and "step 300" in r.stdout
 
+    # the strip is one labelled panel per milestone: three milestones must be wider than one.
+    r1 = _inv(logs_dir, "timeline", "p2e-doorkey6x6-s0", "--seed", "1000", "--milestones", "0",
+              "--phase", "eval", "--backend", "mpl", "--out", str(tmp_path / "t1.png"))
+    assert r1.exit_code == 0, r1.stdout
+    import imageio.v3 as iio
+    one, three = iio.imread(tmp_path / "t1.png"), iio.imread(tmp_path / "t.png")
+    assert three.shape[1] > one.shape[1]
+
+
+def test_timeline_milestones_rejects_empty_list(logs_dir, tmp_path):
+    r = _inv(logs_dir, "timeline", "p2e-doorkey6x6-s0", "--seed", "1000", "--milestones", ",",
+             "--phase", "eval", "--backend", "mpl", "--out", str(tmp_path / "t.png"))
+    assert r.exit_code == 2 and "--milestones" in r.stdout
+
 
 def test_timeline_refuses_mixed_layouts_unless_forced(logs_dir, tmp_path, monkeypatch):
     import wmviz.cli as cli
@@ -76,3 +90,12 @@ def test_timeline_refuses_mixed_layouts_unless_forced(logs_dir, tmp_path, monkey
 def test_timeline_needs_seed_milestones_and_out(logs_dir):
     r = _inv(logs_dir, "timeline", "p2e-doorkey6x6-s0", "--milestones", "0")
     assert r.exit_code == 2
+
+
+def test_hold_last_freezes_on_final_item():
+    """`_hold_last` backs --video's synced tiling: a shorter episode's sequence repeats its last
+    frame instead of running out early, so `grid()` always gets one frame per episode per tick."""
+    from wmviz.cli import _hold_last
+    assert list(_hold_last(iter([1, 2, 3]), 5)) == [1, 2, 3, 3, 3]
+    assert list(_hold_last(iter([1, 2, 3]), 3)) == [1, 2, 3]
+    assert list(_hold_last(iter(["only"]), 4)) == ["only"] * 4

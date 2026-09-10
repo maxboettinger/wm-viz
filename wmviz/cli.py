@@ -343,10 +343,8 @@ def figure(target: str,
     if be == "mpl":
         images = [figure_image(ep, step=s, trail=trail, heatmap=heatmap) for s, _ in steps]
     else:
-        opts = _render_options(idx, row, out, engine, samples, res, 24, 6, False, preview, camera,
-                               trail, heatmap, False, None, None, False, assets, "pip")
         from .render import RenderConfig, render_still
-        cfg = RenderConfig(**opts)
+        cfg = RenderConfig(**_still_options(idx, row, out, engine, samples, res, preview, camera, trail, heatmap, assets))
         images = [render_still(ep, row, cfg, s) for s, _ in steps]
     from .compose import strip
     img = images[0] if len(images) == 1 and not keyframes else strip(images, labels)
@@ -364,12 +362,25 @@ def _same_layout_or_fail(rows, force: bool) -> str:
 
 def _milestones(s: str) -> list[int]:
     try:
-        return [int(v) for v in s.split(",") if v.strip()]
+        out = [int(v) for v in s.split(",") if v.strip()]
     except ValueError:
         _fail(f"--milestones must be a comma list of steps, got {s!r}", 2)
+    if not out:
+        _fail(f"--milestones must be a comma list of steps, got {s!r}", 2)
+    return out
 
 
-def _figure_images(idx, rows, backend: str, camera, preview, engine, samples, res, assets):
+def _still_options(idx, row, out, engine, samples, res, preview, camera, trail, heatmap, assets) -> dict:
+    """`_render_options` pinned to the still-render shape shared by `figure` and `_figure_images`
+    (fixed fps/frames_per_step/discrete/hud/still/save_blend/no_render/dream_layout)."""
+    return _render_options(idx, row, out, engine, samples, res, 24, 6, False, preview, camera,
+                           trail, heatmap, False, None, None, False, assets, "pip")
+
+
+def _figure_images(idx, rows, backend: str, camera, preview, engine, samples, res, assets, out: Path):
+    """One still image per row; the blender backend gives each episode its own `<out stem>_<id>_frames/`
+    (derived from the real `--out`) so distinct episodes never share a frame cache — sharing one
+    fixed placeholder path made every episode's frames indistinguishable and collide across runs."""
     from .mpl import figure_image
     images = []
     for row in rows:
@@ -378,10 +389,24 @@ def _figure_images(idx, rows, backend: str, camera, preview, engine, samples, re
             images.append(figure_image(ep))
         else:
             from .render import RenderConfig, render_still
-            opts = _render_options(idx, row, Path("x.png"), engine, samples, res, 24, 6, False, preview, camera,
-                                   True, True, False, None, None, False, assets, "pip")
+            ep_out = out.parent / f"{out.stem}_{row.episode_id:06d}.png"
+            opts = _still_options(idx, row, ep_out, engine, samples, res, preview, camera, True, True, assets)
             images.append(render_still(ep, row, RenderConfig(**opts), ep.length))
     return images
+
+
+def _hold_last(it, n):
+    """Yield `it`'s items, then repeat its last item until `n` total have been yielded — freezes a
+    shorter animation on its last frame instead of ending early, for `--video`'s synced tiling. Callers
+    pass `n = max(len(...) for ... in ...)` across the tiled sequences, so `n` never truncates `it`."""
+    last = None
+    count = 0
+    for item in it:
+        last = item
+        count += 1
+        yield item
+    for _ in range(n - count):
+        yield last
 
 
 @app.command()
@@ -414,21 +439,25 @@ def timeline(run: str,
         _need_bpy()
     from .compose import grid, label, strip
     if not video:
-        images = _figure_images(idx, picked, be, camera, preview, engine, samples, res, assets)
+        images = _figure_images(idx, picked, be, camera, preview, engine, samples, res, assets, out)
         _write_image(strip(images, labels), out)
     else:
         from .render import RenderConfig, frames_composited, write_mp4
         seqs = []
         for row in picked:
             ep = Episode.load(idx.path_of(row))
-            opts = _render_options(idx, row, out.parent / f"{out.stem}_{row.episode_id:06d}.mp4", engine, samples,
-                                   res, fps, 6, False, preview, camera, True, True, False, None, None, False,
-                                   assets, "pip")
+            ep_out = out.parent / f"{out.stem}_{row.episode_id:06d}.mp4"
+            opts = _render_options(idx, row, ep_out, engine, samples, res, fps, 6, False, preview, camera,
+                                   True, True, False, None, None, False, assets, "pip")
+            # each frames_composited() call renders its episode fully to disk before the next
+            # build() resets the scene for the following episode — sequential by construction.
             seqs.append(frames_composited(ep, row, RenderConfig(**opts)))
-        n = max(len(s) for s in seqs)
+        n = max(count for count, _ in seqs)
+        held = [_hold_last(it, n) for _, it in seqs]
         cols = min(len(seqs), 3)
-        frames = (grid([label(s[min(i, len(s) - 1)], l) for s, l in zip(seqs, labels)], cols=cols) for i in range(n))
-        write_mp4(frames, out.with_suffix(".mp4"), fps)
+        frames = (grid([label(next(h), l) for h, l in zip(held, labels)], cols=cols) for _ in range(n))
+        out = out.with_suffix(".mp4")
+        write_mp4(frames, out, fps)
     console.print(f"wrote {out}")
 
 

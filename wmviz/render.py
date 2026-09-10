@@ -181,13 +181,24 @@ def write_mp4(frames: Iterable[np.ndarray], path: Path, fps: int) -> Path:
     return path
 
 
-def _composited(ep, row, cfg, cams, frames: Sequence[int]):
-    from .animate import frame_step
+def _render_all(ep, row, cfg, cams, frames: Sequence[int]) -> dict[str, list[Path]]:
+    """Render every requested frame of every camera to disk (resumable), before any compositing."""
     prepare_frames_root(cfg)
-    per_cam = {name: render_frames(cam, frames, cfg.frames_dir(name)) for name, cam in cams.items()}
+    return {name: render_frames(cam, frames, cfg.frames_dir(name)) for name, cam in cams.items()}
+
+
+def _compose_from_disk(per_cam: dict[str, list[Path]], ep, row, cfg, frames: Sequence[int]):
+    """Lazily composite one frame at a time from already-rendered per-camera PNGs on disk, so a
+    caller consuming this generator never holds more than one composited frame in memory."""
+    from .animate import frame_step
     for i, f in enumerate(frames):
         imgs = [iio3.imread(per_cam[name][i]) for name in cfg.cameras]
         yield compose_frame(imgs, ep, row, frame_step(f, cfg.anim), cfg)
+
+
+def _composited(ep, row, cfg, cams, frames: Sequence[int]):
+    per_cam = _render_all(ep, row, cfg, cams, frames)
+    return _compose_from_disk(per_cam, ep, row, cfg, frames)
 
 
 def render_still(ep: Episode, row: IndexRow, cfg: RenderConfig, step: int) -> np.ndarray:
@@ -197,10 +208,15 @@ def render_still(ep: Episode, row: IndexRow, cfg: RenderConfig, step: int) -> np
     return next(iter(_composited(ep, row, cfg, cams, [f])))
 
 
-def frames_composited(ep: Episode, row: IndexRow, cfg: RenderConfig) -> list[np.ndarray]:
-    """Every composited frame of the episode's animation (renders first, resumable)."""
+def frames_composited(ep: Episode, row: IndexRow, cfg: RenderConfig) -> tuple[int, Iterable[np.ndarray]]:
+    """Renders every frame of the episode's animation to disk eagerly (resumable, same as `_composited`),
+    then returns `(frame count, a lazy iterator that composites one frame at a time from disk)` — so a
+    caller tiling several episodes' animations together (`timeline --video`) never holds more than one
+    composited frame per episode in memory, instead of the whole animation."""
     _, cams, last = build(ep, cfg)
-    return list(_composited(ep, row, cfg, cams, range(1, last + 1)))
+    frames = range(1, last + 1)
+    per_cam = _render_all(ep, row, cfg, cams, frames)
+    return len(frames), _compose_from_disk(per_cam, ep, row, cfg, frames)
 
 
 def render_episode(ep: Episode, row: IndexRow, cfg: RenderConfig) -> Path:
