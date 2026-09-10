@@ -10,7 +10,7 @@ from wmviz.trace import Episode, Index, Layout, find_runs, parse_ref
 
 def test_index_loads_rows_and_types(run_dir):
     idx = Index.load(run_dir)
-    assert idx.run_name == "p2e-doorkey6x6-s0" and len(idx.rows) == 6
+    assert idx.run_name == "p2e-doorkey6x6-s0" and len(idx.rows) == 7
     r = idx.rows[3]
     assert r.episode_id == 3 and r.phase == "eval" and r.seed == 1001
     assert r.success is True and r.ret == pytest.approx(0.9)
@@ -29,7 +29,7 @@ def test_index_missing_trace_dir_has_clear_error(tmp_path):
 
 def test_index_by_id_error_reports_id_range(run_dir):
     idx = Index.load(run_dir)
-    with pytest.raises(KeyError, match=re.escape("no episode 42 (6 episodes, ids 0..5)")):
+    with pytest.raises(KeyError, match=re.escape("no episode 42 (7 episodes, ids 0..6)")):
         idx.by_id(42)
 
 

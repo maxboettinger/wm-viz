@@ -26,7 +26,8 @@ def doorkey_layout():
 
 
 def make_episode(layout=None, T=6, phase="train_task", actor="task", seed=None,
-                 start_step=0, end_step=None, success=False, with_obs=False, first_door=None):
+                 start_step=0, end_step=None, success=False, with_obs=False, first_door=None,
+                 dream=False):
     g = doorkey_layout() if layout is None else layout
     pos = np.array([[1, 1]] * (T + 1), dtype=np.int16)
     for t in range(1, T + 1):
@@ -46,10 +47,19 @@ def make_episode(layout=None, T=6, phase="train_task", actor="task", seed=None,
                   door_pos=np.array([[3, 3]], dtype=np.int16), door_open=door_open)
     if with_obs:
         arrays["obs"] = np.zeros((T + 1, 8, 8, 3), dtype=np.uint8)
+    if dream:
+        ds = 2
+        arrays["obs"] = np.full((T + 1, 8, 8, 3), 40, dtype=np.uint8)
+        arrays["dream_start"] = np.int64(ds)
+        arrays["recon_frames"] = np.full((ds, 8, 8, 3), 90, dtype=np.uint8)
+        arrays["dream_frames"] = np.full((T + 2, 8, 8, 3), 200, dtype=np.uint8)   # longer than the real episode
+        meta_extra = dict(obs_layout="hwc")
+    else:
+        meta_extra = {}
     meta = dict(format_version=1, env_family="minigrid", env_id="MiniGrid-DoorKey-6x6-v0",
                 run_name="run", phase=phase, actor=actor, seed=seed, exploration="none",
                 obs_mode="pixel", start_step=start_step, end_step=end_step or start_step + T,
-                env_slot=0)
+                env_slot=0, **meta_extra)
     return arrays, meta
 
 
@@ -91,7 +101,7 @@ class TraceBuilder:
 
 @pytest.fixture
 def run_dir(tmp_path):
-    """A synthetic run with 6 episodes covering the selector cases."""
+    """A synthetic run with 7 episodes covering the selector cases (the last one is a dream episode)."""
     b = TraceBuilder(tmp_path / "logs" / "p2e-doorkey6x6-s0")
     b.add(phase="train_explorer", actor="explorer", start_step=0, T=6)
     b.add(phase="train_task", actor="task", start_step=24, T=6, first_door=3)
@@ -99,6 +109,7 @@ def run_dir(tmp_path):
     b.add(phase="eval", actor="task", seed=1001, start_step=100, end_step=100, T=8, success=True, first_door=2)
     b.add(phase="coverage_eval", actor="explorer", seed=2000, start_step=200, end_step=200, T=5)
     b.add(phase="eval", actor="task", seed=1000, start_step=300, end_step=300, T=6, with_obs=True)
+    b.add(phase="dream", actor="task", seed=42, start_step=250, end_step=250, T=6, dream=True)
     return b.run_dir
 
 

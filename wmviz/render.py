@@ -15,7 +15,7 @@ import imageio.v2 as iio
 import imageio.v3 as iio3
 import numpy as np
 
-from .compose import hstack, hud
+from .compose import hstack, hud, pip, split
 from .trace.reader import Episode, IndexRow
 
 # `.animate` (and everything under `.scene`) imports bpy at module level; import it lazily so
@@ -136,8 +136,34 @@ def hud_lines(ep: Episode, row: IndexRow, t: int) -> list[str]:
             f"step {t}/{ep.length}   return {ret:.2f}"]
 
 
+def dream_panels(ep: Episode, t: int) -> tuple[np.ndarray | None, np.ndarray | None, bool]:
+    """(real obs, model view, dreaming?) for state t of a dream episode; model view is None past the stored frames.
+    Model view = posterior reconstruction while t < dream_start, imagined frame from then on."""
+    if ep.dream is None or ep.obs is None:
+        return None, None, False
+    ds = int(ep.dream["dream_start"])
+    real = ep.obs[min(t, len(ep.obs) - 1)]
+    recon = ep.dream.get("recon_frames")
+    if t < ds:
+        model = recon[t] if recon is not None and t < len(recon) else None
+        return real, model, False
+    i = t - ds
+    frames = ep.dream["dream_frames"]
+    return real, (frames[i] if i < len(frames) else None), True
+
+
 def compose_frame(images: Sequence[np.ndarray], ep: Episode, row: IndexRow, t: int, cfg: RenderConfig) -> np.ndarray:
+    """Side-by-side cameras → dream-vs-reality panels (dream episodes only; white frame while the model
+    still tracks the real episode, black once it dreams) → HUD."""
     img = images[0] if len(images) == 1 else hstack(images, gap=6)
+    if ep.dream is not None and ep.obs is not None:
+        real, model, dreaming = dream_panels(ep, t)
+        colour = (0, 0, 0) if dreaming else (255, 255, 255)
+        if cfg.dream_layout == "split":
+            img = split(img, model if model is not None else real, divider=colour)
+        else:
+            insets = [(real, "real obs")] + ([(model, "dream" if dreaming else "recon")] if model is not None else [])
+            img = pip(img, insets, corner="tr", frac=0.25, border=colour)
     if cfg.hud:
         img = hud(img, hud_lines(ep, row, t))
     return img

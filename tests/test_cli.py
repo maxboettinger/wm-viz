@@ -15,7 +15,7 @@ def _inv(logs_dir, *args):
 def test_runs(logs_dir):
     r = _inv(logs_dir, "runs")
     assert r.exit_code == 0 and "p2e-doorkey6x6-s0" in r.stdout
-    assert re.search(r"│\s*6\s*│", r.stdout)
+    assert re.search(r"│\s*7\s*│", r.stdout)
 
 
 def test_runs_survives_a_degraded_run(logs_dir):
@@ -74,7 +74,7 @@ def test_pick_prints_ref_only(logs_dir):
 
 
 def test_pick_no_match_with_empty_filter_describes_run(logs_dir):
-    r = _inv(logs_dir, "pick", "p2e-doorkey6x6-s0", "--phase", "dream", "--latest")
+    r = _inv(logs_dir, "pick", "p2e-doorkey6x6-s0", "--phase", "nope", "--latest")
     assert r.exit_code == 1
     assert "no episodes match the filters" in r.stdout and "phases" in r.stdout
 
@@ -169,6 +169,22 @@ def test_render_target_resolution_errors(logs_dir):
     assert r.exit_code == 2
     r = _inv(logs_dir, "render", "p2e-doorkey6x6-s0/ep000099", *stop)
     assert r.exit_code == 1 and "no episode 99" in r.stdout
+
+
+def test_render_default_camera_is_fpv_for_dream_episodes(logs_dir, monkeypatch):
+    import typer
+    import wmviz.cli
+    seen = []
+
+    def spy(idx, row, out, engine, samples, res, fps, frames_per_step, discrete, preview, camera, *rest):
+        seen.append(camera)
+        raise typer.Exit(0)
+
+    monkeypatch.setattr(wmviz.cli, "_render_options", spy)
+    for args in (("p2e-doorkey6x6-s0/ep000001",), ("p2e-doorkey6x6-s0/ep000006",),
+                 ("p2e-doorkey6x6-s0/ep000006", "--camera", "iso")):
+        assert _inv(logs_dir, "render", *args).exit_code == 0
+    assert seen == ["topdown", "fpv", "iso"]
 
 
 def test_render_option_validation_exits_2(logs_dir, tmp_path):

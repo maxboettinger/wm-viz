@@ -101,6 +101,7 @@ wmviz show $(wmviz pick p2e-n6-s0 --most-cells --phase coverage_eval --at-step 5
 | `wmviz list RUN` | Prints the episodes of a run as a table. Accepts the filters below plus `--sort`, `--asc`, `--limit` |
 | `wmviz pick RUN` | Applies the filters, then one selector, and prints exactly one `<run>/ep000123` reference. Fails with a hint if nothing matches |
 | `wmviz show REF` | Prints an episode's stats and an ASCII top-down map; `--png PATH` also writes a matplotlib preview |
+| `wmviz render TARGET` | Renders one episode (`<run>/ep000123`, or a run plus one selector) as a Blender mp4 or `--still N` PNG; `--camera` defaults to `topdown`, or `fpv` for dream episodes, which get the real observation and the world model's view composited in (`--dream-layout pip|split`, white frame while the model tracks reality, black once it dreams) |
 
 Episode references look like `<run>/ep000123`; `<run>/123` is accepted
 too.
@@ -109,7 +110,7 @@ too.
 
 | Option | Keeps episodes that… |
 |---|---|
-| `--phase P` | belong to phase `P`: `train_task`, `train_explorer`, `train_random`, `eval`, `coverage_eval` |
+| `--phase P` | belong to phase `P`: `train_task`, `train_explorer`, `train_random`, `eval`, `coverage_eval`, `dream` |
 | `--actor A` | were played by actor `A`: `task`, `explorer`, `random` |
 | `--after-step N` / `--before-step N` | started at or after / ended at or before global env step `N` |
 | `--success` / `--no-success` | reached the goal / did not |
@@ -192,6 +193,9 @@ per episode. Each npz contains a JSON `meta` string and these arrays:
 | `door_pos` | `(n_doors, 2)` | Door cells, fixed for the episode |
 | `door_open` | `(T+1, n_doors)` | Whether each door was open |
 | `obs` | `(T+1, H, W, 3)` uint8 | Observations, only when `wm` ran with `--trace-pixels` enabling that phase |
+| `dream_start` | scalar int | Dream episodes only: index of the first imagined state |
+| `recon_frames` | `(dream_start, H, W, 3)` uint8 | Dream episodes only: the world model's posterior reconstructions of states `0..dream_start-1` |
+| `dream_frames` | `(horizon, H, W, 3)` uint8 | Dream episodes only: imagined states from `dream_start` on |
 
 The format is versioned (`format_version` 1 in `meta`); the reader
 rejects other versions rather than guessing. The writer lives in
@@ -204,10 +208,10 @@ this file contract.
 wmviz/trace/reader.py     Index, IndexRow, Episode, Layout, parse_ref, find_runs
 wmviz/trace/selectors.py  Filters, apply_filters, sort_rows, pick
 wmviz/preview.py          ascii_map, save_png
-wmviz/cli.py              the wmviz command (runs, list, pick, show)
+wmviz/cli.py              the wmviz command (runs, list, pick, show, render, figure)
 scripts/trim_trace.py     trims a full wm trace down to a small fixture
 tests/                    unit tests + contract tests against real wm traces
-tests/fixtures/           two real, trimmed runs (see tests/fixtures/README.md)
+tests/fixtures/           three real, trimmed runs, one of them dream episodes (see tests/fixtures/README.md)
 ```
 
 ## Development
@@ -227,6 +231,5 @@ an upstream naming quirk in `minigrid`, documented in the fixtures README.
 
 ## Roadmap
 
-- Blender figure commands (`figure`, `timeline`, `heatmap`) on top of the
-  existing `render` pipeline.
-- Dream-diagnostics traces (`phase=dream`) once `wm` records them.
+- Blender figure commands (`timeline`, `heatmap`) on top of the existing
+  `render` pipeline.

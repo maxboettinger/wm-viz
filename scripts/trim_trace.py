@@ -6,6 +6,7 @@ src, dst, n_train = Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3])
 with open(src / "trace" / "index.csv", newline="") as fh:
     rows = list(csv.DictReader(fh)); cols = list(rows[0].keys())
 kept, n = [], 0
+# non-training phases (eval, coverage_eval, dream) are always kept
 for r in rows:
     train = r["phase"].startswith("train_")
     if train and n >= n_train:

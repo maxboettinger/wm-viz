@@ -257,7 +257,8 @@ def render(target: str,
            best_return: bool = _BEST, most_cells: bool = _MOST, first_success: bool = _FSUCC,
            first_door: bool = _FDOOR, first_key: bool = _FKEY, at_step: Optional[int] = _AT, latest: bool = _LATEST,
            out: Optional[Path] = typer.Option(None, "--out", help="mp4 (or png with --still); default renders/<run>/<ep>"),
-           camera: str = typer.Option("topdown", "--camera", help="topdown,follow,fpv,orbit,iso (comma = side by side)"),
+           camera: Optional[str] = typer.Option(None, "--camera", help="topdown,follow,fpv,orbit,iso (comma = side by side); "
+                                                                        "default topdown, fpv for dream episodes"),
            engine: str = typer.Option("eevee", "--engine", help="eevee | cycles"),
            samples: int = typer.Option(64, "--samples"),
            res: str = typer.Option("1920x1080", "--res"),
@@ -275,6 +276,7 @@ def render(target: str,
     """Render one episode as a Blender animation (or a still) — TARGET is <run>/ep000123 or <run> + one selector."""
     idx, row, ep = _target(target, _filters(phase, actor, after_step, before_step, success, min_cells, layout),
                            best_return, most_cells, first_success, first_door, first_key, at_step, latest)
+    camera = camera or ("fpv" if ep.dream is not None else "topdown")
     opts = _render_options(idx, row, out, engine, samples, res, fps, frames_per_step, discrete, preview, camera,
                            trail, heatmap, hud, still, save_blend, no_render, assets, dream_layout)
     _need_bpy()

@@ -1,0 +1,5 @@
+episode_id,phase,actor,env_slot,seed,start_step,end_step,length,return,success,unique_cells,coverage_pct,first_key_step,first_door_step,first_goal_step,rooms_visited,layout_hash,file
+0,dream,task,0,0,200,200,20,0,0,3,0.230769,,,,,fd0d77a6ad6a,episodes/ep_000000.npz
+1,dream,explorer,0,0,200,200,20,0,0,2,0.153846,4,,,,fd0d77a6ad6a,episodes/ep_000001.npz
+2,dream,task,0,0,400,400,20,0,0,2,0.153846,4,,,,fd0d77a6ad6a,episodes/ep_000002.npz
+3,dream,explorer,0,0,400,400,20,0,0,2,0.153846,,,,,fd0d77a6ad6a,episodes/ep_000003.npz

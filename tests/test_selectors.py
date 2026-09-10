@@ -12,12 +12,12 @@ def rows(run_dir):
 def test_filters(rows):
     assert [r.episode_id for r in apply_filters(rows, Filters(phase="eval"))] == [2, 3, 5]
     assert [r.episode_id for r in apply_filters(rows, Filters(actor="explorer"))] == [0, 4]
-    assert [r.episode_id for r in apply_filters(rows, Filters(after_step=150))] == [4, 5]
+    assert [r.episode_id for r in apply_filters(rows, Filters(after_step=150))] == [4, 5, 6]
     assert [r.episode_id for r in apply_filters(rows, Filters(before_step=50))] == [0, 1]
     assert [r.episode_id for r in apply_filters(rows, Filters(success=True))] == [3]
     assert [r.episode_id for r in apply_filters(rows, Filters(layout="seed:1000"))] == [2, 5]
     h = rows[0].layout_hash
-    assert len(apply_filters(rows, Filters(layout=h[:6]))) == 6
+    assert len(apply_filters(rows, Filters(layout=h[:6]))) == 7
     assert apply_filters(rows, Filters(min_cells=99)) == []
 
 

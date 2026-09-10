@@ -36,3 +36,20 @@ def test_cli_on_real_fixtures():
     ref = CliRunner().invoke(app, ["--logs", str(FIX), "pick", "doorkey6x6", "--latest"]).stdout.strip()
     r = CliRunner().invoke(app, ["--logs", str(FIX), "show", ref])
     assert r.exit_code == 0 and "#" in r.stdout
+
+
+def test_real_dream_fixture_loads_and_composites():
+    import numpy as np
+
+    from wmviz.render import RenderConfig, compose_frame, dream_panels
+    idx = Index.load(FIX / "dream-doorkey6x6")
+    rows = [r for r in idx.rows if r.phase == "dream"]
+    assert {r.actor for r in rows} == {"task", "explorer"}
+    ep = Episode.load(idx.path_of(rows[0]))
+    ds = ep.dream["dream_start"]
+    assert ep.obs.shape[1:] == ep.dream["dream_frames"].shape[1:] and ep.dream["recon_frames"].shape[0] == ds
+    real, model, dreaming = dream_panels(ep, ds)
+    assert dreaming and model.shape == real.shape
+    # 216x384 (not 108x192): two pip insets at frac=0.25 do not fit a 108 px tall base, see test_dream.py
+    out = compose_frame([np.zeros((216, 384, 3), np.uint8)], ep, rows[0], ds, RenderConfig(out=Path("x.mp4")))
+    assert out.shape == (216, 384, 3)
