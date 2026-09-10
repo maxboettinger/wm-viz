@@ -2,6 +2,7 @@
 No bpy — usable for the mpl backend and in tests."""
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Sequence
 
 import numpy as np
@@ -10,6 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 RGB = tuple[int, int, int]
 
 
+@lru_cache(maxsize=None)
 def _font(size: int = 16):
     for name in ("DejaVuSans.ttf", "Arial.ttf", "Helvetica.ttc"):
         try:
@@ -21,7 +23,11 @@ def _font(size: int = 16):
 
 def to_rgb(img: np.ndarray) -> np.ndarray:
     a = np.asarray(img)
+    if a.ndim == 3 and a.shape[2] == 1:
+        a = a[:, :, 0]
     if a.dtype != np.uint8:
+        if np.issubdtype(a.dtype, np.floating) and a.size and float(a.max()) <= 1.0:
+            a = a * 255.0
         a = np.clip(a, 0, 255).astype(np.uint8)
     if a.ndim == 2:
         a = np.stack([a] * 3, axis=-1)
@@ -71,7 +77,9 @@ def grid(frames: Sequence[np.ndarray], cols: int, gap: int = 4) -> np.ndarray:
 def label(img: np.ndarray, text: str, height: int = 28, bg: RGB = (20, 20, 20), fg: RGB = (240, 240, 240)) -> np.ndarray:
     img = to_rgb(img)
     bar = Image.new("RGB", (img.shape[1], height), bg)
-    ImageDraw.Draw(bar).text((6, max(1, (height - 16) // 2)), text, fill=fg, font=_font(max(10, height - 12)))
+    font_size = max(10, height - 12)
+    y = max(0, (height - font_size) // 2 - 1)
+    ImageDraw.Draw(bar).text((6, y), text, fill=fg, font=_font(font_size))
     return vstack([np.asarray(bar), img], gap=0)
 
 
@@ -86,11 +94,11 @@ def hud(img: np.ndarray, lines: Sequence[str], corner: str = "tl") -> np.ndarray
     draw.rectangle([x, y, x + w, y + h], fill=(0, 0, 0, 150))
     for i, s in enumerate(lines):
         draw.text((x + 8, y + 4 + 22 * i), s, fill=(255, 255, 255, 255), font=font)
-    return np.asarray(im.convert("RGB"))
+    return np.array(im.convert("RGB"))
 
 
 def upscale(img: np.ndarray, size: tuple[int, int]) -> np.ndarray:
-    return np.asarray(Image.fromarray(to_rgb(img)).resize(size, Image.NEAREST))
+    return np.array(Image.fromarray(to_rgb(img)).resize(size, Image.NEAREST))
 
 
 def pip(base: np.ndarray, insets: Sequence[tuple[np.ndarray, str]], corner: str = "tr", frac: float = 0.25,
@@ -98,14 +106,23 @@ def pip(base: np.ndarray, insets: Sequence[tuple[np.ndarray, str]], corner: str 
     out = to_rgb(base).copy()
     H, W = out.shape[:2]
     side = int(H * frac)
+    if side <= 0:
+        raise ValueError(f"pip: frac={frac} on base size {W}x{H} gives inset side {side} <= 0")
     tiles = []
     for img, text in insets:
         t = upscale(img, (side, side))
         t = np.pad(t, ((border_px, border_px), (border_px, border_px), (0, 0)), constant_values=0)
-        t[:border_px], t[-border_px:], t[:, :border_px], t[:, -border_px:] = border, border, border, border
+        if border_px:
+            t[:border_px], t[-border_px:], t[:, :border_px], t[:, -border_px:] = border, border, border, border
         tiles.append(label(t, text, height=18))
     block = vstack(tiles, gap=4, gap_color=(0, 0, 0))
     bh, bw = block.shape[:2]
+    # placement below reserves an 8px margin on the anchored edge only (see x/y below),
+    # so that — not a flat 16px on every side — is the real fit constraint.
+    if bh + 8 > H or bw + 8 > W:
+        raise ValueError(
+            f"pip: inset block {bw}x{bh} (frac={frac}) does not fit in base {W}x{H}"
+        )
     x = W - bw - 8 if "r" in corner else 8
     y = 8 if "t" in corner else H - bh - 8
     out[y: y + bh, x: x + bw] = block

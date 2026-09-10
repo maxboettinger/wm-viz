@@ -1,6 +1,5 @@
 """wmviz/compose.py — PIL/numpy post-processing (no bpy)."""
 import numpy as np
-import pytest
 
 from wmviz.compose import grid, hstack, hud, label, pip, split, strip, to_rgb, upscale, vstack
 
@@ -61,3 +60,31 @@ def test_split_upscales_right_and_colours_divider():
 def test_strip_labels_each_image():
     out = strip([_img(10, 10, 1), _img(10, 10, 2)], ["a", "b"], gap=0)
     assert out.shape[1] == 20 and out.shape[0] > 10
+
+
+def test_pip_border_px_zero_keeps_inset_pixels():
+    inset = np.full((8, 8, 3), 200, dtype=np.uint8)
+    out = pip(_img(100, 200, 0), [(inset, "r")], corner="tr", frac=0.2, border_px=0)
+    assert (out == 200).any()   # inset pixel value survives instead of being erased to the border colour
+
+
+def test_to_rgb_scales_float_01_range():
+    out = to_rgb(np.full((4, 4, 3), 0.9, dtype=np.float64))
+    assert out.dtype == np.uint8
+    assert out[0, 0, 0] in (229, 230)   # 0.9 * 255, not clipped-then-cast to 0
+
+
+def test_label_offset_scales_with_font_size():
+    for height in (12, 40):
+        out = label(_img(10, 60, 0), "g", height=height)
+        bar = out[:height]
+        assert bar.max() > 100                       # text renders inside the bar
+        assert (out[height:] == 0).all()              # image below untouched
+        if height == 40:
+            ink_rows = np.where((bar > 100).any(axis=(1, 2)))[0]
+            assert ink_rows.min() >= 1 and ink_rows.max() <= height - 2   # background row above and below
+
+
+def test_upscale_and_hud_return_writeable_arrays():
+    assert upscale(_img(2, 2, 5), (4, 4)).flags.writeable
+    assert hud(_img(20, 20, 0), ["x"]).flags.writeable
