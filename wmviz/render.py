@@ -1,8 +1,12 @@
 """Render pipeline (spec §4): load → build_scene → animate → cameras → overlays → frames → post → mp4.
 One episode per call; the scene is factory-reset first. Existing frames are skipped so an
-interrupted render resumes."""
+interrupted render resumes — but only frames of the same settings: `<out stem>_frames/render.json`
+holds the RenderConfig fingerprint and a mismatching frames directory is wiped first."""
 from __future__ import annotations
 
+import json
+import os
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -52,9 +56,38 @@ class RenderConfig:
     def resolution(self) -> tuple[int, int]:
         return PREVIEW_RES if self.preview else tuple(self.res)
 
-    def frames_dir(self, camera: str) -> Path:
+    def frames_root(self) -> Path:
         out = Path(self.out)
-        return out.parent / f"{out.stem}_frames" / camera
+        return out.parent / f"{out.stem}_frames"
+
+    def frames_dir(self, camera: str) -> Path:
+        return self.frames_root() / camera
+
+    def fingerprint(self) -> dict:
+        """Everything that changes a rendered PNG (JSON round-trip safe); the key of frame resume."""
+        a = self.anim
+        return {"resolution": list(self.resolution), "engine": self.engine, "samples": int(self.samples),
+                "frames_per_step": a.frames_per_step, "discrete": bool(a.discrete),
+                "cameras": list(self.cameras), "trail": bool(self.trail), "heatmap": bool(self.heatmap),
+                "assets": None if self.assets is None else str(self.assets)}
+
+
+def prepare_frames_root(cfg: RenderConfig) -> Path:
+    """Create `<out stem>_frames/` stamped with `cfg.fingerprint()` (render.json). A root stamped
+    by a different config is deleted first, so resume never reuses frames rendered with other settings."""
+    root = cfg.frames_root()
+    stamp = root / "render.json"
+    fp = cfg.fingerprint()
+    if stamp.exists():
+        try:
+            old = json.loads(stamp.read_text())
+        except ValueError:
+            old = None
+        if old != fp:
+            shutil.rmtree(root)
+    root.mkdir(parents=True, exist_ok=True)
+    stamp.write_text(json.dumps(fp, indent=1, sort_keys=True))
+    return root
 
 
 def build(ep: Episode, cfg: RenderConfig):
@@ -82,10 +115,12 @@ def render_frames(cam, frames: Sequence[int], out_dir: Path) -> list[Path]:
     paths = []
     for f in frames:
         path = out_dir / f"f{int(f):05d}.png"
-        if not path.exists():
+        if not (path.exists() and path.stat().st_size > 0):     # a 0-byte file is a killed write
+            tmp = path.with_name(path.stem + ".tmp.png")          # never leave a truncated final PNG
             scene.frame_set(int(f))
-            scene.render.filepath = str(path)
+            scene.render.filepath = str(tmp)
             bpy.ops.render.render(write_still=True)
+            os.replace(tmp, path)
         paths.append(path)
     return paths
 
@@ -117,6 +152,7 @@ def write_mp4(frames: Iterable[np.ndarray], path: Path, fps: int) -> Path:
 
 def _composited(ep, row, cfg, cams, frames: Sequence[int]):
     from .animate import frame_step
+    prepare_frames_root(cfg)
     per_cam = {name: render_frames(cam, frames, cfg.frames_dir(name)) for name, cam in cams.items()}
     for i, f in enumerate(frames):
         imgs = [iio3.imread(per_cam[name][i]) for name in cfg.cameras]
@@ -138,7 +174,9 @@ def render_episode(ep: Episode, row: IndexRow, cfg: RenderConfig) -> Path:
     if cfg.save_blend is not None:
         save_blend(cfg.save_blend)
     if cfg.no_render:
-        return Path(cfg.save_blend) if cfg.save_blend is not None else Path(cfg.out)
+        if cfg.save_blend is None:
+            raise ValueError("no_render needs save_blend: nothing would be written")
+        return Path(cfg.save_blend)
     out = Path(cfg.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     if cfg.still is not None:

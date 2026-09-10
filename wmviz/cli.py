@@ -139,15 +139,22 @@ def pick_cmd(run: str, phase: Optional[str] = _PHASE, actor: Optional[str] = _AC
         _fail("give exactly one selector: --best-return, --most-cells, --first-success, "
               "--first-door, --first-key, --at-step N, --latest", 2)
     idx = _index(run)
+    row = _pick(idx, _filters(phase, actor, after_step, before_step, success, min_cells, layout), chosen[0], at_step)
+    print(row.ref(idx.run_name))
+
+
+def _pick(idx: Index, filters: Filters, selector: str, at_step: Optional[int] = None) -> IndexRow:
+    """Filter `idx.rows`, apply one selector. Bad filter/selector values exit 2; no match exits 1 with a hint."""
     try:
-        rows = apply_filters(idx.rows, _filters(phase, actor, after_step, before_step, success, min_cells, layout))
+        rows = apply_filters(idx.rows, filters)
     except ValueError as e:
         _fail(str(e), 2)
     try:
-        row = pick_row(rows, chosen[0], at_step=at_step)
+        return pick_row(rows, selector, at_step=at_step)
+    except ValueError as e:
+        _fail(str(e), 2)
     except NoMatch as e:
         _fail(str(e) + _no_match_hint(idx, rows))
-    print(row.ref(idx.run_name))
 
 
 def _no_match_hint(idx: Index, rows: list[IndexRow]) -> str:
@@ -201,37 +208,38 @@ def _target(target: str, filters: Filters, best_return, most_cells, first_succes
         _fail("TARGET is a run name: give exactly one selector (--best-return, --most-cells, --first-success, "
               "--first-door, --first-key, --at-step N, --latest) or pass <run>/ep000123", 2)
     idx = _index(target)
-    try:
-        rows = apply_filters(idx.rows, filters)
-        row = pick_row(rows, chosen[0], at_step=at_step)
-    except ValueError as e:
-        _fail(str(e), 2)
-    except NoMatch as e:
-        _fail(str(e) + _no_match_hint(idx, rows))
+    row = _pick(idx, filters, chosen[0], at_step)
     return idx, row, Episode.load(idx.path_of(row))
 
 
 def _parse_res(s: str) -> tuple[int, int]:
     try:
-        w, h = s.lower().split("x")
-        return int(w), int(h)
+        w, h = (int(v) for v in s.lower().split("x"))
     except ValueError:
         _fail(f"--res must look like 1920x1080, got {s!r}", 2)
+    if w <= 0 or h <= 0 or w % 2 or h % 2:
+        _fail(f"--res width and height must be positive and even (libx264 needs even dimensions), got {s!r}", 2)
+    return w, h
 
 
 def _default_out(idx: Index, row: IndexRow, suffix: str) -> Path:
     return Path("renders") / idx.run_name / f"ep{row.episode_id:06d}{suffix}"
 
 
-def _render_config(idx, row, out, engine, samples, res, fps, frames_per_step, discrete, preview, camera,
-                   trail, heatmap, hud, still, save_blend, no_render, assets, dream_layout):
-    from .render import RenderConfig
+def _render_options(idx, row, out, engine, samples, res, fps, frames_per_step, discrete, preview, camera,
+                    trail, heatmap, hud, still, save_blend, no_render, assets, dream_layout) -> dict:
+    """Validated `RenderConfig` kwargs (bad values exit 2). Imports nothing that needs bpy, so
+    argument errors are reported before — and independently of — the Blender check."""
     cams = tuple(c.strip() for c in camera.split(",") if c.strip())
-    return RenderConfig(out=out or _default_out(idx, row, ".png" if still is not None else ".mp4"),
-                        engine=engine, samples=samples, res=_parse_res(res), fps=fps,
-                        frames_per_step=frames_per_step, discrete=discrete, preview=preview, cameras=cams,
-                        trail=trail, heatmap=heatmap, hud=hud, still=still, save_blend=save_blend,
-                        no_render=no_render, assets=assets, dream_layout=dream_layout)
+    if not cams:
+        _fail("--camera needs at least one preset (topdown, follow, fpv, orbit, iso)", 2)
+    if no_render and save_blend is None:
+        _fail("--no-render needs --save-blend (the GUI path writes a .blend and stops)", 2)
+    return dict(out=out or _default_out(idx, row, ".png" if still is not None else ".mp4"),
+                engine=engine, samples=samples, res=_parse_res(res), fps=fps,
+                frames_per_step=frames_per_step, discrete=discrete, preview=preview, cameras=cams,
+                trail=trail, heatmap=heatmap, hud=hud, still=still, save_blend=save_blend,
+                no_render=no_render, assets=assets, dream_layout=dream_layout)
 
 
 def _need_bpy():
@@ -267,12 +275,12 @@ def render(target: str,
     """Render one episode as a Blender animation (or a still) — TARGET is <run>/ep000123 or <run> + one selector."""
     idx, row, ep = _target(target, _filters(phase, actor, after_step, before_step, success, min_cells, layout),
                            best_return, most_cells, first_success, first_door, first_key, at_step, latest)
+    opts = _render_options(idx, row, out, engine, samples, res, fps, frames_per_step, discrete, preview, camera,
+                           trail, heatmap, hud, still, save_blend, no_render, assets, dream_layout)
     _need_bpy()
-    from .render import render_episode
-    cfg = _render_config(idx, row, out, engine, samples, res, fps, frames_per_step, discrete, preview, camera,
-                         trail, heatmap, hud, still, save_blend, no_render, assets, dream_layout)
+    from .render import RenderConfig, render_episode
     try:
-        result = render_episode(ep, row, cfg)
+        result = render_episode(ep, row, RenderConfig(**opts))
     except ValueError as e:
         _fail(str(e), 2)
     console.print(f"wrote {result}")

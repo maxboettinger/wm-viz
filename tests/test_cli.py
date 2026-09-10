@@ -162,12 +162,27 @@ def test_pick_actor_latest(logs_dir):
 
 
 def test_render_target_resolution_errors(logs_dir):
-    r = _inv(logs_dir, "render", "p2e-doorkey6x6-s0", "--no-render")
+    stop = ("--save-blend", "x.blend", "--no-render")        # never reached: TARGET errors fire first
+    r = _inv(logs_dir, "render", "p2e-doorkey6x6-s0", *stop)
     assert r.exit_code == 2 and "selector" in r.stdout
-    r = _inv(logs_dir, "render", "p2e-doorkey6x6-s0", "--best-return", "--most-cells", "--no-render")
+    r = _inv(logs_dir, "render", "p2e-doorkey6x6-s0", "--best-return", "--most-cells", *stop)
     assert r.exit_code == 2
-    r = _inv(logs_dir, "render", "p2e-doorkey6x6-s0/ep000099", "--no-render")
+    r = _inv(logs_dir, "render", "p2e-doorkey6x6-s0/ep000099", *stop)
     assert r.exit_code == 1 and "no episode 99" in r.stdout
+
+
+def test_render_option_validation_exits_2(logs_dir, tmp_path):
+    """Argument errors are reported before the bpy check (and never write anything)."""
+    ref = "p2e-doorkey6x6-s0/ep000001"
+    blend = str(tmp_path / "x.blend")
+    r = _inv(logs_dir, "render", ref, "--no-render")
+    assert r.exit_code == 2 and "--save-blend" in r.stdout
+    r = _inv(logs_dir, "render", ref, "--camera", " , ", "--save-blend", blend, "--no-render")
+    assert r.exit_code == 2 and "--camera" in r.stdout
+    for bad in ("961x540", "960x541", "0x540", "1920", "wxh"):
+        r = _inv(logs_dir, "render", ref, "--res", bad, "--save-blend", blend, "--no-render")
+        assert r.exit_code == 2 and "--res" in r.stdout, bad
+    assert not (tmp_path / "x.blend").exists()
 
 
 def test_render_reports_missing_bpy_or_runs(logs_dir, tmp_path, monkeypatch):
